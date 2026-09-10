@@ -82,12 +82,12 @@ while ($true) {
         Write-Host "Current Uptime:    $UptimeString"
         
         Write-Host "`n- - - SPECS - - -" -ForegroundColor Yellow
-        Write-Host "C: Drive:          $CSizeGB GB (Free: $CFreeGB GB)"
+        Write-Host "C Drive:           $CSizeGB GB (Free: $CFreeGB GB)"
         Write-Host "CPU:               $($CPU.Name)"
         Write-Host "RAM:               $RamGB GB"
     }
 
-    # --- OUTLOOK DATA FILES ---
+    # - - - OUTLOOK DATA FILES - - -
     Write-Host "`n--- OUTLOOK DATA FILES ---" -ForegroundColor Yellow
     $UserProfilesPath = "\\$ComputerName\C$\Users"
     
@@ -107,7 +107,7 @@ while ($true) {
                     $FileSizeGB = [math]::Round(($File.Length / 1GB), 2)
                     
                     $DisplaySize = if ($FileSizeGB -ge 1) { "$FileSizeGB GB" } else { "$FileSizeMB MB" }
-                    Write-Host "User: $($User.Name) | File: $($File.Name) | Size: $DisplaySize"
+                    Write-Host "User: $($User.Name)     File: $($File.Name) | Size: $DisplaySize"
                 }
             }
         }
