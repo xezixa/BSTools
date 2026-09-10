@@ -72,19 +72,19 @@ while ($true) {
         $CSizeGB = if ($Disk) { [math]::Round(($Disk.Size / 1GB), 2) } else { 0 }
         $CFreeGB = if ($Disk) { [math]::Round(($Disk.FreeSpace / 1GB), 2) } else { 0 }
         
-        Write-Host "--- SYSTEM INFORMATION ---" -ForegroundColor Yellow
-        Write-Host "Logged On:       $CurrentUser"
+        Write-Host "- - - DEVICE INFORMATION - - -" -ForegroundColor Yellow
+        Write-Host "Logged On:         $CurrentUser"
         Write-Host "Device Model:      $($CS.Model)"
-        Write-Host "Serial Number:   $($BIOS.SerialNumber)"
-        Write-Host "Mfg Date:        $MfgDate"
-        Write-Host "IPv4 Address:            $IPAddress"
-        Write-Host "Windows Version: $($OS.Caption) ($($OS.Version))"
-        Write-Host "Current Uptime:          $UptimeString"
+        Write-Host "Serial Number:     $($BIOS.SerialNumber)"
+        Write-Host "MFG Date:          $MfgDate" # this gives inaccurate data...
+        Write-Host "IPv4 Address:      $IPAddress"
+        Write-Host "Windows Version:   $($OS.Caption) ($($OS.Version))"
+        Write-Host "Current Uptime:    $UptimeString"
         
-        Write-Host "`n--- SPECS ---" -ForegroundColor Yellow
-        Write-Host "C:\ Size:   $CSizeGB GB (Free: $CFreeGB GB)"
-        Write-Host "CPU:             $($CPU.Name)"
-        Write-Host "RAM:       $RamGB GB"
+        Write-Host "`n- - - SPECS - - -" -ForegroundColor Yellow
+        Write-Host "C: Drive:          $CSizeGB GB (Free: $CFreeGB GB)"
+        Write-Host "CPU:               $($CPU.Name)"
+        Write-Host "RAM:               $RamGB GB"
     }
 
     # --- OUTLOOK DATA FILES ---
