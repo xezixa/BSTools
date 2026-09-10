@@ -23,7 +23,7 @@ while ($true) {
     $CimSession = $null
     $DataGathered = $false
 
-    # --- DATA GATHERING (WinRM with DCOM Fallback) ---
+    # DATA GATHERING (WinRM with DCOM Fallback)
     try {
         # attempt 1: WinRM
         $CimSession = New-CimSession -ComputerName $ComputerName -ErrorAction Stop
@@ -34,6 +34,7 @@ while ($true) {
         $Net  = Get-CimInstance Win32_NetworkAdapterConfiguration -CimSession $CimSession -Filter "IPEnabled = 'True'" -ErrorAction SilentlyContinue
         $CPU  = Get-CimInstance Win32_Processor -CimSession $CimSession -ErrorAction Stop
         $Disk = Get-CimInstance Win32_LogicalDisk -CimSession $CimSession -Filter "DeviceID='C:'" -ErrorAction Stop
+        $CSP  = Get-CimInstance Win32_ComputerSystemProduct -CimSession $CimSession -ErrorAction SilentlyContinue
         
         $DataGathered = $true
     } catch {
@@ -51,6 +52,7 @@ while ($true) {
             $Net  = Get-CimInstance Win32_NetworkAdapterConfiguration -CimSession $CimSession -Filter "IPEnabled = 'True'" -ErrorAction SilentlyContinue
             $CPU  = Get-CimInstance Win32_Processor -CimSession $CimSession -ErrorAction Stop
             $Disk = Get-CimInstance Win32_LogicalDisk -CimSession $CimSession -Filter "DeviceID='C:'" -ErrorAction Stop
+            $CSP  = Get-CimInstance Win32_ComputerSystemProduct -CimSession $CimSession -ErrorAction SilentlyContinue
             
             $DataGathered = $true
         } catch {
@@ -66,7 +68,83 @@ while ($true) {
         $UptimeString = "$($Uptime.Days) Days, $($Uptime.Hours) Hours, $($Uptime.Minutes) Minutes"
         $IPAddress = if ($Net) { $Net.IPAddress[0] } else { "Unknown" }
         $CurrentUser = if ($CS.UserName) { $CS.UserName } else { "None / System" }
-        $MfgDate = if ($BIOS.ReleaseDate) { $BIOS.ReleaseDate.ToString('yyyy-MM-dd') } else { "Unknown" }
+        
+        $Manufacturer = $CS.Manufacturer
+        $SN = $BIOS.SerialNumber
+        $MfgDate = "Unknown"
+        $ModelString = $CS.Model
+
+        # SMART LENOVO LOGIC
+        if ($Manufacturer -match "Lenovo") {
+            
+            # cleans up the device model string
+            $FriendlyName = $CS.Model
+            
+            # if SKU number has a messy format, extract only the friendly name at the end
+            if ($CS.SystemSKUNumber -match "_FM_(.*)") {
+                $FriendlyName = $Matches[1]
+            } 
+            # fallback for older Lenovo models where Version held the friendly name
+            elseif ($CSP -and $CSP.Version -and $CSP.Version -notmatch "^Lenovo$|^ThinkPad$") {
+                $FriendlyName = $CSP.Version
+            }
+            
+            $ModelString = "$FriendlyName ($($CS.Model))"
+
+            # finds MFG date via hardware proxies
+            
+            # attempt 1: query the Internal LCD Screen's manufacturing date
+            try {
+                $Monitors = Get-CimInstance -Namespace root\wmi -Class WmiMonitorID -CimSession $CimSession -ErrorAction Stop
+                $InternalMon = $Monitors | Where-Object { $_.YearOfManufacture -gt 1990 } | Select-Object -First 1
+                if ($InternalMon) {
+                    # converts yr and wk to an exact date, then formats to month-year
+                    $LCDDate = (Get-Date -Year $InternalMon.YearOfManufacture -Month 1 -Day 1).AddDays(($InternalMon.WeekOfManufacture - 1) * 7)
+                    $MfgDate = "$($LCDDate.ToString('MMMM yyyy')) (via Display Sensor)"
+                }
+            } catch {}
+
+            # attempt 2: if display fails (e.g. desktop), query the smart battery
+            if ($MfgDate -eq "Unknown") {
+                try {
+                    $Battery = Get-CimInstance -Namespace root\wmi -Class BatteryStaticData -CimSession $CimSession -ErrorAction Stop | Select-Object -First 1
+                    if ($Battery -and $Battery.ManufactureDate -gt 0) {
+                        # decodes Lenovo Battery Date int.
+                        $DateInt = $Battery.ManufactureDate
+                        $Day = $DateInt -band 31
+                        $Month = ($DateInt -shr 5) -band 15
+                        $Year = ($DateInt -shr 9) + 1980
+                        
+                        if ($Year -gt 2010 -and $Year -lt 2040) {
+                            $BatDate = Get-Date -Year $Year -Month $Month -Day $Day
+                            $MfgDate = "$($BatDate.ToString('MMMM yyyy')) (via Battery Sensor)"
+                        }
+                    }
+                } catch {}
+            }
+        } 
+        
+        # SMART HP LOGIC
+        elseif ($Manufacturer -match "HP|Hewlett-Packard" -and $SN.Length -ge 6) {
+            $ModelString = if ($CS.SystemSKUNumber) { "$($CS.Model) ($($CS.SystemSKUNumber))" } else { $($CS.Model) }
+            
+            try {
+                $YearDigit = [int][string]$SN[3]
+                $WeekDigit = [int]$SN.Substring(4, 2)
+                $BaseYear = if ($YearDigit -ge 7) { 2010 } else { 2020 }
+                $CalculatedYear = $BaseYear + $YearDigit
+                
+                $ApproxDate = (Get-Date -Year $CalculatedYear -Month 1 -Day 1).AddDays(($WeekDigit - 1) * 7)
+                $MfgDate = "$($ApproxDate.ToString('MMMM yyyy')) (via HP SN Decode)"
+            } catch {
+                $MfgDate = "Parse Error (Check HP SN format)"
+            }
+        } 
+        
+        # FALLBACK LOGIC
+        if ($MfgDate -eq "Unknown") {
+            $MfgDate = if ($BIOS.ReleaseDate) { "$($BIOS.ReleaseDate.ToString('MMMM yyyy')) (BIOS Flashed Date)" } else { "Unknown" }
+        }
 
         # storage calc for C:\ drive
         $CSizeGB = if ($Disk) { [math]::Round(($Disk.Size / 1GB), 2) } else { 0 }
@@ -74,9 +152,9 @@ while ($true) {
         
         Write-Host "- - - DEVICE INFORMATION - - -" -ForegroundColor Yellow
         Write-Host "Logged On:         $CurrentUser"
-        Write-Host "Device Model:      $($CS.Model)"
-        Write-Host "Serial Number:     $($BIOS.SerialNumber)"
-        Write-Host "MFG Date:          $MfgDate" # this gives inaccurate data...
+        Write-Host "Device Model:      $ModelString"
+        Write-Host "MFG Date:          $MfgDate" 
+        Write-Host "Serial Number:     $SN"
         Write-Host "IPv4 Address:      $IPAddress"
         Write-Host "Windows Version:   $($OS.Caption) ($($OS.Version))"
         Write-Host "Current Uptime:    $UptimeString"
