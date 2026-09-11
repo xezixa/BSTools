@@ -19,11 +19,11 @@ while ($true) {
         continue
     }
 
-    Write-Host "Finding useful specs..." -ForegroundColor Cyan
+    Write-Host "Grabbing useful specs..." -ForegroundColor Cyan
     $CimSession = $null
     $DataGathered = $false
 
-    # DATA GATHERING (WinRM with DCOM Fallback)
+    # DATA GATHERING (WinRM or DCOM as Fallback)
     try {
         # attempt 1: WinRM
         $CimSession = New-CimSession -ComputerName $ComputerName -ErrorAction Stop
@@ -80,47 +80,71 @@ while ($true) {
             # cleans up the device model string
             $FriendlyName = $CS.Model
             
-            # if SKU number has a messy format, extract only the friendly name at the end
             if ($CS.SystemSKUNumber -match "_FM_(.*)") {
                 $FriendlyName = $Matches[1]
-            } 
-            # fallback for older Lenovo models where Version held the friendly name
-            elseif ($CSP -and $CSP.Version -and $CSP.Version -notmatch "^Lenovo$|^ThinkPad$") {
+            } elseif ($CSP -and $CSP.Version -and $CSP.Version -notmatch "^Lenovo$|^ThinkPad$") {
                 $FriendlyName = $CSP.Version
             }
-            
             $ModelString = "$FriendlyName ($($CS.Model))"
 
-            # finds MFG date via hardware proxies
-            
-            # attempt 1: query the Internal LCD Screen's manufacturing date
+            # attempt 1: query the smart battery 1st
             try {
-                $Monitors = Get-CimInstance -Namespace root\wmi -Class WmiMonitorID -CimSession $CimSession -ErrorAction Stop
-                $InternalMon = $Monitors | Where-Object { $_.YearOfManufacture -gt 1990 } | Select-Object -First 1
-                if ($InternalMon) {
-                    # converts yr and wk to an exact date, then formats to month-year
-                    $LCDDate = (Get-Date -Year $InternalMon.YearOfManufacture -Month 1 -Day 1).AddDays(($InternalMon.WeekOfManufacture - 1) * 7)
-                    $MfgDate = "$($LCDDate.ToString('MMMM yyyy')) (via Display Sensor)"
+                $Battery = Get-CimInstance -Namespace root\wmi -Class BatteryStaticData -CimSession $CimSession -ErrorAction Stop | Select-Object -First 1
+                if ($Battery -and $Battery.ManufactureDate -gt 0) {
+                    $DateInt = $Battery.ManufactureDate
+                    $Day = $DateInt -band 31
+                    $Month = ($DateInt -shr 5) -band 15
+                    $Year = ($DateInt -shr 9) + 1980
+                    
+                    # only take battery date if it's realistic (prevents weird firmware glitches)
+                    $CurrentYear = (Get-Date).Year
+                    if ($Year -ge 2015 -and $Year -le $CurrentYear) {
+                        $BatDate = Get-Date -Year $Year -Month $Month -Day $Day
+                        $MfgDate = "$($BatDate.ToString('MMMM yyyy')) (captured via Battery Sensor)"
+                    }
                 }
             } catch {}
 
-            # attempt 2: if display fails (e.g. desktop), query the smart battery
+            # attempt 2: CPU Gen. Inference (foolproof fallback)
             if ($MfgDate -eq "Unknown") {
-                try {
-                    $Battery = Get-CimInstance -Namespace root\wmi -Class BatteryStaticData -CimSession $CimSession -ErrorAction Stop | Select-Object -First 1
-                    if ($Battery -and $Battery.ManufactureDate -gt 0) {
-                        # decodes Lenovo Battery Date int.
-                        $DateInt = $Battery.ManufactureDate
-                        $Day = $DateInt -band 31
-                        $Month = ($DateInt -shr 5) -band 15
-                        $Year = ($DateInt -shr 9) + 1980
-                        
-                        if ($Year -gt 2010 -and $Year -lt 2040) {
-                            $BatDate = Get-Date -Year $Year -Month $Month -Day $Day
-                            $MfgDate = "$($BatDate.ToString('MMMM yyyy')) (via Battery Sensor)"
-                        }
+                $CpuName = $CPU.Name
+                $CpuYear = $null
+                
+                # 1. check for explicit "Xth Gen" tag
+                if ($CpuName -match "\b(\d{1,2})(?:th|st|nd|rd)\s+Gen") {
+                    $gen = [int]$Matches[1]
+                    if ($gen -ge 6 -and $gen -le 14) {
+                        $CpuYear = 2010 + $gen
                     }
-                } catch {}
+                }
+                # 2. check for Intel Core Ultra (e.g. Ultra 5 125U) - 2024
+                elseif ($CpuName -match "Ultra\s+[3579]\s+[12]\d{2}[A-Z]") {
+                    $CpuYear = 2024
+                } 
+                # 3. fallback for Intel Core i-Series without the "Gen" tag (i7-8250U or i7-1255U)
+                elseif ($CpuName -match "i[3579]-(\d+)") {
+                    $modelNum = $Matches[1]
+                    if ($modelNum.Length -eq 4) {
+                        # handles both 8250 (Gen 8) and 1255 (Gen 12)
+                        $firstTwo = [int]$modelNum.Substring(0, 2)
+                        if ($firstTwo -ge 10) { $CpuYear = 2010 + $firstTwo } 
+                        else { $CpuYear = 2010 + [int]$modelNum.Substring(0, 1) }
+                    } elseif ($modelNum.Length -eq 5) {
+                        # handles 12700 (Gen 12)
+                        $CpuYear = 2010 + [int]$modelNum.Substring(0, 2)
+                    }
+                }
+                # 4. check for AMD Ryzen series (Ryzen 7 5700U -> 5000 series)
+                elseif ($CpuName -match "Ryzen\s+[3579].*?\b(\d)\d{3}") {
+                    $gen = [int]$Matches[1]
+                    if ($gen -ge 3 -and $gen -le 8) {
+                        $CpuYear = 2016 + $gen
+                    }
+                }
+
+                if ($CpuYear) {
+                    $MfgDate = "Est. MFG Year: $CpuYear (via CPU Gen.)"
+                }
             }
         } 
         
