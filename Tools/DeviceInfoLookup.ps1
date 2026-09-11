@@ -1,18 +1,111 @@
 [CmdletBinding()]
 param()
 
+# loads AD module for username resolution
+if (Get-Module -ListAvailable ActiveDirectory) {
+    Import-Module ActiveDirectory
+}
+
 # keeps script running unless you type 'Q'
 while ($true) {
     Clear-Host
     
-    # prompt for target computer name on domain
-    $ComputerName = Read-Host "Enter BlueStar Device Name ('Q' to quit)"
+    # prompt for target computer name, username, or full name
+    $SearchTarget = Read-Host "Enter BlueStar Computer Name, Username, Employee Name | ('Q' to quit)"
     
-    if ($ComputerName -eq 'q' -or $ComputerName -eq 'Q') { break }
-    if ([string]::IsNullOrWhiteSpace($ComputerName)) { continue }
+    if ($SearchTarget -eq 'q' -or $SearchTarget -eq 'Q') { break }
+    if ([string]::IsNullOrWhiteSpace($SearchTarget)) { continue }
 
-    Write-Host "`nPinging $ComputerName..." -ForegroundColor Cyan
+    # DEVICE RESOLUTION LOGIC
+    $ComputerName = $SearchTarget
 
+    if (Get-Command Get-ADUser -ErrorAction SilentlyContinue) {
+        
+        # if input doesn't look like a BlueStar computer name, try to resolve it
+        if ($SearchTarget -notmatch "^BS(US|CA|MX|LA)\d+") {
+            $SearchString = $SearchTarget
+            
+            # if no spaces, determine if it is a username or first name
+            if ($SearchTarget -notmatch "\s") {
+                try {
+                    # attempt to find an AD User with this exact username (sAMAccountName)
+                    $ADUser = Get-ADUser -Identity $SearchTarget -Properties GivenName, Surname -Server "bluestarinc.com" -ErrorAction Stop
+                    
+                    # if found, format to "first last" to match computer description
+                    $SearchString = "$($ADUser.GivenName) $($ADUser.Surname)".Trim()
+                    Write-Host "`n[*] Username '$SearchTarget' found. Full Name: $SearchString" -ForegroundColor Cyan
+                } 
+                catch {
+                    # if Get-ADUser fails then it's not a valid username. treat it as a first name.
+                    Write-Host "`n[*] No username match. Treating input as First Name: $SearchString" -ForegroundColor Cyan
+                }
+            } else {
+                Write-Host "`n[*] Full Name detected. Searching for: $SearchString" -ForegroundColor Cyan
+            }
+
+            Write-Host "[*] Querying domain for associated computer(s)..." -ForegroundColor Yellow
+            
+            # prefix search for description
+            $LDAPFilter = "(&(description=$SearchString*)(|(name=BSUS*)(name=BSLA*)(name=BSCA*)(name=BSMX*)))"
+            
+            # exec search against the domain
+            $MatchedPCs = Get-ADComputer -LDAPFilter $LDAPFilter -Properties Description -Server "bluestarinc.com" -ErrorAction SilentlyContinue
+            
+            if ($MatchedPCs) {
+                $PCArray = @($MatchedPCs) | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Name) } | Sort-Object Name -Descending 
+                
+                Write-Host "`n[+] Found $($PCArray.Count) associated device(s) in AD. Pinging to find active machines..." -ForegroundColor Cyan
+                
+                # ping sweep to display only active machines
+                $ActivePCs = @()
+                foreach ($PC in $PCArray) {
+                    if (Test-Connection -ComputerName $PC.Name -Count 1 -Quiet -ErrorAction SilentlyContinue) {
+                        $ActivePCs += $PC
+                    }
+                }
+
+                if ($ActivePCs.Count -eq 0) {
+                    Write-Warning "Devices were found in AD for '$SearchString', but they are all currently offline."
+                    Read-Host "`nPress Enter to reset..."
+                    continue
+                } elseif ($ActivePCs.Count -eq 1) {
+                    $ComputerName = $ActivePCs[0].Name
+                    Write-Host "[+] Detected active device: $ComputerName ($($ActivePCs[0].Description))" -ForegroundColor Green
+                } else {
+                    # if multiple active devices found; prompt user to select one
+                    Write-Host "`n[!] Multiple ACTIVE devices found under '$SearchString':" -ForegroundColor Yellow
+                    for ($i = 0; $i -lt $ActivePCs.Count; $i++) {
+                        Write-Host "  [$($i + 1)] $($ActivePCs[$i].Name) - $($ActivePCs[$i].Description)"
+                    }
+                    
+                    $Selection = 0
+                    while ($Selection -lt 1 -or $Selection -gt $ActivePCs.Count) {
+                        $Input = Read-Host "`nEnter the number of the device you want to query"
+                        if ([int]::TryParse($Input, [ref]$Selection)) {
+                            if ($Selection -lt 1 -or $Selection -gt $ActivePCs.Count) {
+                                Write-Host "Invalid selection. Please pick a number from the list." -ForegroundColor Red
+                            }
+                        }
+                    }
+                    $ComputerName = $ActivePCs[$Selection - 1].Name
+                    Write-Host "[+] Selected: $ComputerName" -ForegroundColor Green
+                }
+            } else {
+                Write-Warning "[-] No computers found starting with BSUS, BSLA, BSCA, or BSMX assigned to $SearchString."
+                Read-Host "`nPress Enter to try again..."
+                continue
+            }
+        }
+    } else {
+        if ($SearchTarget -notmatch "^BS(US|CA|MX|LA)") {
+            Write-Warning "ActiveDirectory module missing. Searching by name/username requires RSAT tools installed."
+        }
+    }
+    # -------------------------------
+
+    Write-Host "`nEstablishing connection to $ComputerName..." -ForegroundColor Cyan
+
+    # final ping check (primarily for manually entered computer names)
     if (-not (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet -ErrorAction SilentlyContinue)) {
         Write-Warning "Computer '$ComputerName' is offline or unreachable."
         Read-Host "`nPress Enter to try again..."
@@ -22,8 +115,9 @@ while ($true) {
     Write-Host "Grabbing useful specs..." -ForegroundColor Cyan
     $CimSession = $null
     $DataGathered = $false
+    $ProtocolUsed = "None"
 
-    # DATA GATHERING (WinRM or DCOM as Fallback)
+    # DATA GATHERING (WinRM with DCOM Fallback)
     try {
         # attempt 1: WinRM
         $CimSession = New-CimSession -ComputerName $ComputerName -ErrorAction Stop
@@ -37,8 +131,8 @@ while ($true) {
         $CSP  = Get-CimInstance Win32_ComputerSystemProduct -CimSession $CimSession -ErrorAction SilentlyContinue
         
         $DataGathered = $true
+        $ProtocolUsed = "WinRM"
     } catch {
-        Write-Host " [!] WinRM query failed - Invalid XML/blocked port. Falling back to DCOM..." -ForegroundColor DarkYellow
         if ($CimSession) { Remove-CimSession $CimSession -ErrorAction SilentlyContinue }
         
         try {
@@ -55,14 +149,16 @@ while ($true) {
             $CSP  = Get-CimInstance Win32_ComputerSystemProduct -CimSession $CimSession -ErrorAction SilentlyContinue
             
             $DataGathered = $true
+            $ProtocolUsed = "DCOM"
         } catch {
             Write-Warning "Remote management failed on $ComputerName. Both WinRM and DCOM are unreachable."
         }
     }
 
-    # --- DISPLAY SYSTEM INFO ---
+    # DISPLAY SYSTEM INFO
     if ($DataGathered) {
-        # calc & variables
+        Write-Host "Using Protocol: $ProtocolUsed" -ForegroundColor Green
+        
         $RamGB = [math]::Round(($CS.TotalPhysicalMemory / 1GB), 2)
         $Uptime = (Get-Date) - $OS.LastBootUpTime
         $UptimeString = "$($Uptime.Days) Days, $($Uptime.Hours) Hours, $($Uptime.Minutes) Minutes"
@@ -74,12 +170,9 @@ while ($true) {
         $MfgDate = "Unknown"
         $ModelString = $CS.Model
 
-        # SMART LENOVO LOGIC
+        # LENOVO/HP LOGIC
         if ($Manufacturer -match "Lenovo") {
-            
-            # cleans up the device model string
             $FriendlyName = $CS.Model
-            
             if ($CS.SystemSKUNumber -match "_FM_(.*)") {
                 $FriendlyName = $Matches[1]
             } elseif ($CSP -and $CSP.Version -and $CSP.Version -notmatch "^Lenovo$|^ThinkPad$") {
@@ -87,7 +180,6 @@ while ($true) {
             }
             $ModelString = "$FriendlyName ($($CS.Model))"
 
-            # attempt 1: query the smart battery 1st
             try {
                 $Battery = Get-CimInstance -Namespace root\wmi -Class BatteryStaticData -CimSession $CimSession -ErrorAction Stop | Select-Object -First 1
                 if ($Battery -and $Battery.ManufactureDate -gt 0) {
@@ -96,59 +188,15 @@ while ($true) {
                     $Month = ($DateInt -shr 5) -band 15
                     $Year = ($DateInt -shr 9) + 1980
                     
-                    # only take battery date if it's realistic (prevents weird firmware glitches)
                     $CurrentYear = (Get-Date).Year
                     if ($Year -ge 2015 -and $Year -le $CurrentYear) {
                         $BatDate = Get-Date -Year $Year -Month $Month -Day $Day
-                        $MfgDate = "$($BatDate.ToString('MMMM yyyy')) (captured via Battery Sensor)"
+                        $MfgDate = "$($BatDate.ToString('MMMM yyyy')) (via Battery Sensor)"
                     }
                 }
             } catch {}
-
-            # attempt 2: CPU Gen. Inference (foolproof fallback)
-            if ($MfgDate -eq "Unknown") {
-                $CpuName = $CPU.Name
-                $CpuYear = $null
-                
-                # 1. check for explicit "Xth Gen" tag
-                if ($CpuName -match "\b(\d{1,2})(?:th|st|nd|rd)\s+Gen") {
-                    $gen = [int]$Matches[1]
-                    if ($gen -ge 6 -and $gen -le 14) {
-                        $CpuYear = 2010 + $gen
-                    }
-                }
-                # 2. check for Intel Core Ultra (e.g. Ultra 5 125U) - 2024
-                elseif ($CpuName -match "Ultra\s+[3579]\s+[12]\d{2}[A-Z]") {
-                    $CpuYear = 2024
-                } 
-                # 3. fallback for Intel Core i-Series without the "Gen" tag (i7-8250U or i7-1255U)
-                elseif ($CpuName -match "i[3579]-(\d+)") {
-                    $modelNum = $Matches[1]
-                    if ($modelNum.Length -eq 4) {
-                        # handles both 8250 (Gen 8) and 1255 (Gen 12)
-                        $firstTwo = [int]$modelNum.Substring(0, 2)
-                        if ($firstTwo -ge 10) { $CpuYear = 2010 + $firstTwo } 
-                        else { $CpuYear = 2010 + [int]$modelNum.Substring(0, 1) }
-                    } elseif ($modelNum.Length -eq 5) {
-                        # handles 12700 (Gen 12)
-                        $CpuYear = 2010 + [int]$modelNum.Substring(0, 2)
-                    }
-                }
-                # 4. check for AMD Ryzen series (Ryzen 7 5700U -> 5000 series)
-                elseif ($CpuName -match "Ryzen\s+[3579].*?\b(\d)\d{3}") {
-                    $gen = [int]$Matches[1]
-                    if ($gen -ge 3 -and $gen -le 8) {
-                        $CpuYear = 2016 + $gen
-                    }
-                }
-
-                if ($CpuYear) {
-                    $MfgDate = "Est. MFG Year: $CpuYear (via CPU Gen.)"
-                }
-            }
         } 
         
-        # SMART HP LOGIC
         elseif ($Manufacturer -match "HP|Hewlett-Packard" -and $SN.Length -ge 6) {
             $ModelString = if ($CS.SystemSKUNumber) { "$($CS.Model) ($($CS.SystemSKUNumber))" } else { $($CS.Model) }
             
@@ -165,16 +213,47 @@ while ($true) {
             }
         } 
         
-        # FALLBACK LOGIC
-        if ($MfgDate -eq "Unknown") {
+        # CPU INFERENCE FALLBACK
+        if ($MfgDate -eq "Unknown" -or $MfgDate -match "Parse Error") {
+            $CpuName = $CPU.Name
+            $CpuYear = $null
+            
+            if ($CpuName -match "\b(\d{1,2})(?:th|st|nd|rd)\s+Gen") {
+                $gen = [int]$Matches[1]
+                if ($gen -ge 6 -and $gen -le 14) { $CpuYear = 2010 + $gen }
+            } 
+            elseif ($CpuName -match "Core(?:\(TM\))?\s+(?:Ultra\s+)?[3579]\s+([12])\d{2}[A-Z]") {
+                $CpuYear = 2023 + [int]$Matches[1]
+            } 
+            elseif ($CpuName -match "i[3579]-(\d+)") {
+                $modelNum = $Matches[1]
+                if ($modelNum.Length -eq 4) {
+                    $firstTwo = [int]$modelNum.Substring(0, 2)
+                    if ($firstTwo -ge 10) { $CpuYear = 2010 + $firstTwo } 
+                    else { $CpuYear = 2010 + [int]$modelNum.Substring(0, 1) }
+                } elseif ($modelNum.Length -eq 5) {
+                    $CpuYear = 2010 + [int]$modelNum.Substring(0, 2)
+                }
+            } 
+            elseif ($CpuName -match "Ryzen\s+[3579].*?\b(\d)\d{3}") {
+                $gen = [int]$Matches[1]
+                if ($gen -ge 3 -and $gen -le 8) { $CpuYear = 2016 + $gen }
+            }
+
+            if ($CpuYear) {
+                $MfgDate = "Est. Model Year: $CpuYear (via CPU Gen.)"
+            }
+        }
+
+        # LAST RESORT BIOS FALLBACK
+        if ($MfgDate -eq "Unknown" -or $MfgDate -match "Parse Error") {
             $MfgDate = if ($BIOS.ReleaseDate) { "$($BIOS.ReleaseDate.ToString('MMMM yyyy')) (BIOS Flashed Date)" } else { "Unknown" }
         }
 
-        # storage calc for C:\ drive
         $CSizeGB = if ($Disk) { [math]::Round(($Disk.Size / 1GB), 2) } else { 0 }
         $CFreeGB = if ($Disk) { [math]::Round(($Disk.FreeSpace / 1GB), 2) } else { 0 }
         
-        Write-Host "- - - DEVICE INFORMATION - - -" -ForegroundColor Yellow
+        Write-Host "`n- - - DEVICE INFORMATION - - -" -ForegroundColor Yellow
         Write-Host "Logged On:         $CurrentUser"
         Write-Host "Device Model:      $ModelString"
         Write-Host "MFG Date:          $MfgDate" 
@@ -189,8 +268,8 @@ while ($true) {
         Write-Host "RAM:               $RamGB GB"
     }
 
-    # - - - OUTLOOK DATA FILES - - -
-    Write-Host "`n--- OUTLOOK DATA FILES ---" -ForegroundColor Yellow
+    # OUTLOOK DATA FILES
+    Write-Host "`n- - - OUTLOOK DATA FILE CHECK - - -" -ForegroundColor Yellow
     $UserProfilesPath = "\\$ComputerName\C$\Users"
     
     if (Test-Path $UserProfilesPath) {
@@ -215,13 +294,13 @@ while ($true) {
         }
         
         if (-not $FoundOutlookFiles) {
-            Write-Host "No Outlook data files found." -ForegroundColor Gray
+            Write-Host "No Outlook data file found." -ForegroundColor Gray
         }
     } else {
         Write-Warning "Could not access administrative share to (\\$ComputerName\C$). This machine may be offline, blocking SMB, or you lack local admin rights."
     }
     
-    # cleans up session memory before moving to the next PC
+    # cleans up session memory before moving to next PC
     if ($CimSession) {
         Remove-CimSession $CimSession -ErrorAction SilentlyContinue
     }
