@@ -12,13 +12,15 @@ while ($true) {
     
     # cool banner
     Write-Host "          =================BSTools=================" -ForegroundColor Blue
-    Write-Host "                 BlueStarIT Lookup Tool v1.6" -ForegroundColor White
+    Write-Host "                 BlueStarIT Lookup Tool v1.7" -ForegroundColor White
     Write-Host "                 Developed by: Chase Bezilla" -ForegroundColor DarkGray
     Write-Host "                  For BlueStar, Inc. (2026)" -ForegroundColor DarkGray
     Write-Host "          ============github.com/xezixa============" -ForegroundColor Blue
     
     # prompt for target computer name, username, or full name 
-    $SearchTarget = Read-Host "`nEnter BlueStar Computer Name, Username, or Employee Name | ('Q' to quit)"
+
+Write-Host "`n[?] Enter BlueStar Computer Name, Username, or Employee Name: " -ForegroundColor Yellow -NoNewLine
+$SearchTarget = Read-Host
 
     Write-Host "`n---------------------------------------------------" -ForegroundColor Yellow
     
@@ -31,7 +33,7 @@ while ($true) {
 
     if (Get-Command Get-ADUser -ErrorAction SilentlyContinue) { 
         
-        # if input doesn't look like a BlueStar computer name, try to resolve it 
+        # if input doesn't look like a BlueStar computer name, try to resolve it anyway
         if ($SearchTarget -notmatch "^BS(US|CA|MX|LA)\d+") { 
             $SearchString = $SearchTarget 
             
@@ -43,17 +45,17 @@ while ($true) {
                     
                     # if found, format to "first last" to match computer description 
                     $SearchString = "$($ADUser.GivenName) $($ADUser.Surname)".Trim() 
-                    Write-Host "`n[*] Username Found!: '$SearchTarget' | Employee Name: $SearchString" -ForegroundColor Gray 
+                    Write-Host "`n[-] Username Found!: '$SearchTarget' | Employee Name: $SearchString" -ForegroundColor Cyan 
                 }  
                 catch { 
                     # if Get-ADUser fails then it's not a valid username. treat it as a first name. 
-                    Write-Host "`n[+] No exact username match. Treating input as First Name: $SearchString" -ForegroundColor Cyan 
+                    Write-Host "`n[*] No exact username match. Treating input as First Name: $SearchString" -ForegroundColor Cyan 
                 } 
             } else { 
                 Write-Host "`n[+] Full Name detected! Searching for: $SearchString" -ForegroundColor DarkGreen 
             } 
 
-            Write-Host "[*] Searching for computer(s)..." -ForegroundColor Gray 
+            Write-Host "[-] Searching for computer(s)..." -ForegroundColor Gray 
             
             # prefix search for description 
             $LDAPFilter = "(&(description=$SearchString*)(|(name=BSUS*)(name=BSLA*)(name=BSCA*)(name=BSMX*)))" 
@@ -64,7 +66,7 @@ while ($true) {
             if ($MatchedPCs) { 
                 $PCArray = @($MatchedPCs) | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Name) } | Sort-Object Name -Descending  
                 
-                Write-Host "[*] Device(s) detected. Pinging to ensure connection..." -ForegroundColor DarkGreen 
+                Write-Host "[+] Device(s) detected. Pinging to ensure connection..." -ForegroundColor DarkGreen 
                 
                 # ping sweep to display only active machines 
                 $ActivePCs = @() 
@@ -81,7 +83,7 @@ while ($true) {
                 } elseif ($ActivePCs.Count -eq 1) { 
                     $ComputerName = $ActivePCs[0].Name 
                     $ComputerDesc = $ActivePCs[0].Description
-                    Write-Host "[*] Beginning lookup on: $ComputerName ($ComputerDesc)" -ForegroundColor DarkGreen 
+                    Write-Host "[+] Beginning lookup on: $ComputerName ($ComputerDesc)" -ForegroundColor DarkGreen 
                 } else { 
                     # if multiple active devices found; prompt user to select one 
                     Write-Host "`n[!] Multiple ACTIVE devices found under '$SearchString':" -ForegroundColor Red 
@@ -91,7 +93,8 @@ while ($true) {
                     
                     $Selection = 0 
                     while ($Selection -lt 1 -or $Selection -gt $ActivePCs.Count) { 
-                        $Input = Read-Host "`nEnter the number of the device you want to query" 
+                        Write-Host "`n[?] Enter the number of the device you want to query: " -NoNewline -ForegroundColor Yellow
+                        $Input = Read-Host 
                         if ([int]::TryParse($Input, [ref]$Selection)) { 
                             if ($Selection -lt 1 -or $Selection -gt $ActivePCs.Count) { 
                                 Write-Host "Invalid selection. Please pick a number from the list." -ForegroundColor Red 
@@ -100,7 +103,7 @@ while ($true) {
                     } 
                     $ComputerName = $ActivePCs[$Selection - 1].Name 
                     $ComputerDesc = $ActivePCs[$Selection - 1].Description
-                    Write-Host "`n[+] Beginning lookup on: $ComputerName ($ComputerDesc)" -ForegroundColor Cyan 
+                    Write-Host "`n[+] Beginning lookup on: $ComputerName ($ComputerDesc)" -ForegroundColor DarkGreen 
                 } 
             } else { 
                 Write-Warning "[-] No computers found starting with BSUS, BSLA, BSCA, or BSMX assigned to $SearchString." 
@@ -108,7 +111,7 @@ while ($true) {
                 continue 
             } 
         } else {
-            Write-Host "`n[+] Beginning lookup on: $ComputerName" -ForegroundColor Cyan
+            Write-Host "`n[+] Beginning lookup on: $ComputerName" -ForegroundColor DarkGreen
         }
     } else { 
         if ($SearchTarget -notmatch "^BS(US|CA|MX|LA)") { 
@@ -121,7 +124,7 @@ while ($true) {
     Write-Host ""
     Write-Host "            - Connected to: $ComputerName -" -ForegroundColor Green
     Write-Host ""
-    Write-Host "Grabbing useful information..." -ForegroundColor White
+    Write-Host "[-] Grabbing useful information..." -ForegroundColor White
 
     # final ping check (primarily for manually entered computer names) 
     if (-not (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet -ErrorAction SilentlyContinue)) { 
@@ -174,7 +177,7 @@ while ($true) {
 
     # DISPLAY SYSTEM INFO 
     if ($DataGathered) { 
-        Write-Host "Protocol Used: $ProtocolUsed" -ForegroundColor Cyan
+        Write-Host "[*] Protocol Used: $ProtocolUsed" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "---------------------------------------------------`n" -ForegroundColor Yellow
         
@@ -273,7 +276,7 @@ while ($true) {
         $CFreeGB = if ($Disk) { [math]::Round(($Disk.FreeSpace / 1GB), 2) } else { 0 } 
         
         Write-Host "- - - DEVICE INFORMATION - - -" -ForegroundColor Blue
-	Write-Host ""
+        Write-Host ""
         Write-Host "Logged On:         $CurrentUser`n" 
         Write-Host "Device Model:      $ModelString" 
         Write-Host "Est. MFG Year:     $MfgDate"  
@@ -281,49 +284,178 @@ while ($true) {
         Write-Host "IPv4 Address:      $IPAddress" 
         Write-Host "Windows Version:   $($OS.Caption) ($($OS.Version))" 
         Write-Host "Current Uptime:    $UptimeString`n" 
-	Write-Host ""
+        Write-Host ""
 
-        
         Write-Host "- - - SPECIFICATIONS  - - -" -ForegroundColor Blue
-	Write-Host ""
+        Write-Host ""
         Write-Host "CPU:               $($CPU.Name)" 
         Write-Host "C Drive:           $CSizeGB GB (Free: $CFreeGB GB)" 
         Write-Host "RAM:               $RamGB GB`n" 
-	Write-Host ""
-	
+        Write-Host ""
     } 
 
-    # OUTLOOK DATA FILES 
-
-    Write-Host "- - - OUTLOOK DATA FILE CHECK - - -" -ForegroundColor Blue
-    Write-Host ""
     $UserProfilesPath = "\\$ComputerName\C$\Users" 
     
     if (Test-Path $UserProfilesPath) { 
-        $Users = Get-ChildItem $UserProfilesPath -Directory -ErrorAction SilentlyContinue 
+        
+        # determine the target user (Currently Logged On)
+        $Users = @()
+        if ($CurrentUser -and $CurrentUser -ne "None / System") {
+            $ActiveUserFolder = $CurrentUser.Split('\')[-1]
+            $ActiveUserPath = Join-Path $UserProfilesPath $ActiveUserFolder
+            
+            if (Test-Path $ActiveUserPath) {
+                $Users += [PSCustomObject]@{
+                    Name = $ActiveUserFolder
+                    FullName = $ActiveUserPath
+                }
+            }
+        }
+        
+        # OUTLOOK DATA FILE CHECKER
+        Write-Host "- - - OUTLOOK DATA FILE CHECKER - - -" -ForegroundColor Blue
+        Write-Host ""
+        
         $FoundOutlookFiles = $false 
         
         foreach ($User in $Users) { 
-            $OutlookPath = Join-Path $User.FullName "AppData\Local\Microsoft\Outlook" 
+            $OstPath = Join-Path $User.FullName "AppData\Local\Microsoft\Outlook" 
+            $PstPath = Join-Path $User.FullName "Documents\Outlook Files"
             
-            if (Test-Path $OutlookPath -ErrorAction SilentlyContinue) { 
-                $Files = Get-ChildItem -Path $OutlookPath -Include *.ost, *.pst -Recurse -File -ErrorAction SilentlyContinue 
-                
-                foreach ($File in $Files) { 
-                    $FoundOutlookFiles = $true 
-                    $FileSizeMB = [math]::Round(($File.Length / 1MB), 2) 
-                    $FileSizeGB = [math]::Round(($File.Length / 1GB), 2) 
-                    
-                    $DisplaySize = if ($FileSizeGB -ge 1) { "$FileSizeGB GB" } else { "$FileSizeMB MB" } 
-		    Write-Host "File:              $($File.Name)"-ForegroundColor Gray
-		    Write-Host "Size:              $DisplaySize" -ForegroundColor Gray
-                } 
+            $OstFiles = @()
+            $PstFiles = @()
+
+            if (Test-Path $OstPath -ErrorAction SilentlyContinue) { 
+                $OstFiles = Get-ChildItem -Path $OstPath -Filter *.ost -File -ErrorAction SilentlyContinue 
+                $PstFiles += Get-ChildItem -Path $OstPath -Filter *.pst -File -ErrorAction SilentlyContinue
             } 
+            
+            if (Test-Path $PstPath -ErrorAction SilentlyContinue) {
+                $PstFiles += Get-ChildItem -Path $PstPath -Filter *.pst -File -ErrorAction SilentlyContinue
+            }
+
+            if ($OstFiles.Count -gt 0 -or $PstFiles.Count -gt 0) {
+                foreach ($File in $OstFiles) { 
+                    $FoundOutlookFiles = $true 
+                    $FileSizeGB = [math]::Round(($File.Length / 1GB), 2) 
+                    $Pct = [math]::Round((($File.Length / 1GB) / 50) * 100, 1)
+                    
+                    $LocalDir = $File.Directory.FullName.Replace("\\$ComputerName\C$", "C:").Replace("\\$ComputerName\c$", "C:")
+                    
+                    Write-Host "Live Data (.OST)" -ForegroundColor Magenta
+                    Write-Host "File Name:         $($File.Name)" -ForegroundColor Gray
+                    Write-Host "File Size:         $FileSizeGB GB / 50 GB | $Pct% Full" -ForegroundColor Gray
+                    Write-Host "Location:          $LocalDir" -ForegroundColor Gray
+                    Write-Host ""
+                } 
+
+                foreach ($File in $PstFiles) { 
+                    $FoundOutlookFiles = $true 
+                    $FileSizeGB = [math]::Round(($File.Length / 1GB), 2) 
+                    $Pct = [math]::Round((($File.Length / 1GB) / 50) * 100, 1)
+                    
+                    $LocalDir = $File.Directory.FullName.Replace("\\$ComputerName\C$", "C:").Replace("\\$ComputerName\c$", "C:")
+                    
+                    Write-Host "Archive Data (.PST)" -ForegroundColor Magenta
+                    Write-Host "File Name:         $($File.Name)" -ForegroundColor Gray
+                    Write-Host "File Size:         $FileSizeGB GB / 50 GB | $Pct% Full" -ForegroundColor Gray
+                    Write-Host "Location:          $LocalDir" -ForegroundColor Gray
+                    Write-Host ""
+                }
+            }
         } 
         
         if (-not $FoundOutlookFiles) { 
-            Write-Host "No Outlook data file found." -ForegroundColor Gray 
+            Write-Host "No Outlook data files found for active user." -ForegroundColor Gray 
+            Write-Host ""
         } 
+
+        # FOLDER SIZES PROMPT
+        if ($Users.Count -gt 0) {
+            $TargetUser = $Users[0].Name
+            
+            Write-Host "[?] Would you like to begin directory scan to capture $($TargetUser)'s folder sizes? (Y/N): " -NoNewline -ForegroundColor Yellow
+            $ScanPrompt = Read-Host
+            
+            if ($ScanPrompt -match "^[Yy]") {
+                Write-Host "`n- - - FOLDER SIZES - - -" -ForegroundColor Blue
+                Write-Host "`nScanning active user directories... [Press 'S' at any time to skip a folder]" -ForegroundColor DarkGray
+                Write-Host ""
+                
+                foreach ($User in $Users) {
+                    Write-Host "User: $($User.Name)" -ForegroundColor Gray
+                    
+                    $TargetFolders = @()
+                    $TargetFolders += [PSCustomObject]@{ Name = "Downloads"; Path = Join-Path $User.FullName "Downloads" }
+                    $TargetFolders += [PSCustomObject]@{ Name = "Documents"; Path = Join-Path $User.FullName "Documents" }
+                    $TargetFolders += [PSCustomObject]@{ Name = "Desktop"; Path = Join-Path $User.FullName "Desktop" }
+                    $TargetFolders += [PSCustomObject]@{ Name = "Pictures"; Path = Join-Path $User.FullName "Pictures" }
+                    $TargetFolders += [PSCustomObject]@{ Name = "Videos"; Path = Join-Path $User.FullName "Videos" }
+
+                    foreach ($FolderObj in $TargetFolders) {
+                        $FPath = $FolderObj.Path
+                        $FName = $FolderObj.Name
+                        
+                        $FBytes = 0
+                        $Skipped = $false
+                        $FileCount = 0
+
+                        if (Test-Path $FPath) {
+                            try {
+                                # uses labeled loop to safely break out of just this folder's pipeline
+                                :ScanLoop do {
+                                    Get-ChildItem -Path $FPath -Recurse -Force -File -ErrorAction SilentlyContinue | ForEach-Object {
+                                        
+                                        # listens for the 'S' key
+                                        if ([System.Console]::KeyAvailable) {
+                                            $key = [System.Console]::ReadKey($true)
+                                            if ($key.Key -eq 'S' -or $key.Key -eq 's') {
+                                                $Skipped = $true
+                                                break ScanLoop
+                                            }
+                                        }
+                                        
+                                        $FBytes += $_.Length
+                                        $FileCount++
+                                        
+                                        # updates banner every 50 files to prevent performance issues
+                                        if ($FileCount % 50 -eq 0) {
+                                            $SizeMB = [math]::Round(($FBytes / 1MB), 2)
+                                            Write-Progress -Activity "Scanning $($User.Name)\$FName..." -Status "Files: $FileCount | Size: $SizeMB MB [Press 'S' to Skip]"
+                                        }
+                                    }
+                                } while ($false)
+                            } catch {
+                                # catch pipeline break exceptions
+                            }
+                            
+                            Write-Progress -Activity "Scanning $($User.Name)\$FName..." -Completed
+                            
+                            if ($Skipped) {
+                                $PaddedName = "$FName`:"
+                                Write-Host "$($PaddedName.PadRight(18)) [SKIPPED by User]" -ForegroundColor Yellow
+                                
+                                # flushes buffer so held-down keys don't bleed into other prompts
+                                while ([System.Console]::KeyAvailable) {
+                                    $null = [System.Console]::ReadKey($true)
+                                }
+                            } else {
+                                $FSizeGB = [math]::Round(($FBytes / 1GB), 2)
+                                $PaddedName = "$FName`:"
+                                Write-Host "$($PaddedName.PadRight(18)) $FSizeGB GB" -ForegroundColor Gray
+                            }
+                        } else {
+                            $PaddedName = "$FName`:"
+                            Write-Host "$($PaddedName.PadRight(18)) 0 GB (Not Found)" -ForegroundColor DarkGray
+                        }
+                    }
+                }
+            } else {
+                Write-Host "`nSkipping directory scan for $TargetUser." -ForegroundColor DarkGray
+            }
+        } else {
+            Write-Host "No active user profile found on C:\ to run folder scans." -ForegroundColor Gray
+        }
     } else { 
         Write-Warning "Could not access administrative share to (\\$ComputerName\C$). This machine may be offline, blocking SMB, or you lack local admin rights." 
     } 
