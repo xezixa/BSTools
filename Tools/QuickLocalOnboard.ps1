@@ -1,17 +1,18 @@
-<# BlueStar GUI based AD onboard/offboard tool #>
+<#
+.SYNOPSIS
+    GUI based AD onboard/offboard tool 
+#>
 
 Requires -Modules ActiveDirectory
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.DirectoryServices
 
-# ==============================================================================
 # CONFIG DATA
-# ==============================================================================
 $Domain = "bluestarinc.com"
 $BaseDN = "DC=bluestarinc,DC=com"
 
-# master config using to enforce specific dropdown sequences
+# master config
 $Global:ConfigData = [ordered]@{
     "BlueStar US" = @{
         ADName = "BlueStar_US"
@@ -52,15 +53,15 @@ $DefaultGroups = @(
     "OWA_2FA", "BlueStar Barracuda"
 )
 
-# Variable to hold the name of the last successfully created user
+# variable to hold the name of the last successfully created user
 $script:provisionedUser = ""
 
-# Script paths for mailbox provisioning
+# paths for mailbox provisioning
 $script:mailboxScriptPath_Manual = "\\bsqnap\PST\RemoteMailboxProvisioning\Create-RemoteMailboxV2.ps1"
 $script:mailboxScriptPath_Auto = "C:\Users\cbezilla\Documents\Skrips\MailboxProvisionTool_Parameter.ps1"
 
 # ==============================================================================
-# HELPER FUNCT.
+# HELPER FUNCTIONS
 # ==============================================================================
 function Show-NameValidationPrompt {
     param([string]$ExpectedName)
@@ -106,9 +107,7 @@ function Show-NameValidationPrompt {
 }
 
 
-# ==============================================================================
 # GUI SETUP
-# ==============================================================================
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Onboarding/Offboarding Tool"
 $form.Size = New-Object System.Drawing.Size(450, 650)
@@ -124,27 +123,82 @@ $pnlMain = New-Object System.Windows.Forms.Panel
 $pnlMain.Size = $form.ClientSize
 $pnlMain.Visible = $true
 
+# MAIN MENU BANNER 
+$lblBanner1 = New-Object System.Windows.Forms.Label
+$lblBanner1.Text = "=================== BSTools ========================"
+$lblBanner1.ForeColor = [System.Drawing.Color]::Blue
+$lblBanner1.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+$lblBanner1.Size = New-Object System.Drawing.Size($form.ClientSize.Width, 20)
+$lblBanner1.Location = New-Object System.Drawing.Point(0, 15)
+$lblBanner1.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$pnlMain.Controls.Add($lblBanner1)
+
+$lblBanner2 = New-Object System.Windows.Forms.Label
+$lblBanner2.Text = "BlueStar Quick On/Off"
+$lblBanner2.ForeColor = [System.Drawing.Color]::Black
+$lblBanner2.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
+$lblBanner2.Size = New-Object System.Drawing.Size($form.ClientSize.Width, 25)
+$lblBanner2.Location = New-Object System.Drawing.Point(0, 35)
+$lblBanner2.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$pnlMain.Controls.Add($lblBanner2)
+
+$lblBanner3 = New-Object System.Windows.Forms.Label
+$lblBanner3.Text = "Developed by: Chase Bezilla"
+$lblBanner3.ForeColor = [System.Drawing.Color]::DarkGray
+$lblBanner3.Size = New-Object System.Drawing.Size($form.ClientSize.Width, 20)
+$lblBanner3.Location = New-Object System.Drawing.Point(0, 65)
+$lblBanner3.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$pnlMain.Controls.Add($lblBanner3)
+
+$lblBanner4 = New-Object System.Windows.Forms.Label
+$lblBanner4.Text = "For BlueStar, Inc. (2026)"
+$lblBanner4.ForeColor = [System.Drawing.Color]::DarkGray
+$lblBanner4.Size = New-Object System.Drawing.Size($form.ClientSize.Width, 20)
+$lblBanner4.Location = New-Object System.Drawing.Point(0, 85)
+$lblBanner4.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$pnlMain.Controls.Add($lblBanner4)
+
+$lblBanner5 = New-Object System.Windows.Forms.Label
+$lblBanner5.Text = "=============== github.com/xezixa ==================="
+$lblBanner5.ForeColor = [System.Drawing.Color]::Blue
+$lblBanner5.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+$lblBanner5.Size = New-Object System.Drawing.Size($form.ClientSize.Width, 20)
+$lblBanner5.Location = New-Object System.Drawing.Point(0, 105)
+$lblBanner5.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$pnlMain.Controls.Add($lblBanner5)
+
 $btnOnboarding = New-Object System.Windows.Forms.Button
 $btnOnboarding.Text = "Onboarding"
+$btnOnboarding.BackColor = [System.Drawing.Color]::LightGreen
 $btnOnboarding.Size = New-Object System.Drawing.Size(200, 50)
-$btnOnboarding.Location = New-Object System.Drawing.Point(115, 150)
+$btnOnboarding.Location = New-Object System.Drawing.Point(115, 200)
 $btnOnboarding.Add_Click({ $pnlMain.Visible = $false; $pnlOnboard.Visible = $true })
 $pnlMain.Controls.Add($btnOnboarding)
 
 $btnOffboarding = New-Object System.Windows.Forms.Button
 $btnOffboarding.Text = "Offboarding"
+$btnOffboarding.BackColor = [System.Drawing.Color]::LightCoral
 $btnOffboarding.Size = New-Object System.Drawing.Size(200, 50)
-$btnOffboarding.Location = New-Object System.Drawing.Point(115, 220)
+$btnOffboarding.Location = New-Object System.Drawing.Point(115, 270)
 $btnOffboarding.Add_Click({ $pnlMain.Visible = $false; $pnlOffboard.Visible = $true })
 $pnlMain.Controls.Add($btnOffboarding)
 
-# ONBOARD SUB-MENU
+# ONBOARD SUBMENU
 $pnlOnboard = New-Object System.Windows.Forms.Panel
 $pnlOnboard.Size = $form.ClientSize
 $pnlOnboard.Visible = $false
 
+$lblOnboardMenuTitle = New-Object System.Windows.Forms.Label
+$lblOnboardMenuTitle.Text = "Employee Onboarding"
+$lblOnboardMenuTitle.Font = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
+$lblOnboardMenuTitle.Size = New-Object System.Drawing.Size($form.ClientSize.Width, 30)
+$lblOnboardMenuTitle.Location = New-Object System.Drawing.Point(0, 80)
+$lblOnboardMenuTitle.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$pnlOnboard.Controls.Add($lblOnboardMenuTitle)
+
 $btnNewHire = New-Object System.Windows.Forms.Button
 $btnNewHire.Text = "Create New Hire"
+$btnNewHire.BackColor = [System.Drawing.Color]::LightGreen
 $btnNewHire.Size = New-Object System.Drawing.Size(200, 50)
 $btnNewHire.Location = New-Object System.Drawing.Point(115, 150)
 $btnNewHire.Add_Click({ $pnlOnboard.Visible = $false; $pnlNewHire.Visible = $true })
@@ -152,6 +206,7 @@ $pnlOnboard.Controls.Add($btnNewHire)
 
 $btnMailbox = New-Object System.Windows.Forms.Button
 $btnMailbox.Text = "Mailbox Provisioning"
+$btnMailbox.BackColor = [System.Drawing.Color]:: LightBlue
 $btnMailbox.Size = New-Object System.Drawing.Size(200, 50)
 $btnMailbox.Location = New-Object System.Drawing.Point(115, 220)
 $btnMailbox.Add_Click({
@@ -176,13 +231,23 @@ $btnBackMain.Add_Click({ $pnlOnboard.Visible = $false; $pnlMain.Visible = $true 
 $pnlOnboard.Controls.Add($btnBackMain)
 
 
-# OFFBOARD SUB-MENU
+# OFFBOARD SUBMENU
 $pnlOffboard = New-Object System.Windows.Forms.Panel
 $pnlOffboard.Size = $form.ClientSize
 $pnlOffboard.Visible = $false
 
+$lblOffboardMenuTitle = New-Object System.Windows.Forms.Label
+$lblOffboardMenuTitle.Text = "Employee Offboarding"
+$lblOffboardMenuTitle.Font = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
+$lblOffboardMenuTitle.Size = New-Object System.Drawing.Size($form.ClientSize.Width, 30)
+$lblOffboardMenuTitle.Location = New-Object System.Drawing.Point(0, 80)
+$lblOffboardMenuTitle.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$pnlOffboard.Controls.Add($lblOffboardMenuTitle)
+
 $btnOffboardEmp = New-Object System.Windows.Forms.Button
-$btnOffboardEmp.Text = "Offboard Employee"
+$btnOffboardEmp.Text = "Initial Offboarding"
+$btnOffboardEmp.BackColor = [System.Drawing.Color]:: LightCoral
+
 $btnOffboardEmp.Size = New-Object System.Drawing.Size(200, 50)
 $btnOffboardEmp.Location = New-Object System.Drawing.Point(115, 150)
 $btnOffboardEmp.Add_Click({ $pnlOffboard.Visible = $false; $pnlOffboardEmp.Visible = $true })
@@ -190,6 +255,7 @@ $pnlOffboard.Controls.Add($btnOffboardEmp)
 
 $btn90Day = New-Object System.Windows.Forms.Button
 $btn90Day.Text = "90-Day Deletion"
+$btn90Day.BackColor = [System.Drawing.Color]:: DarkRed
 $btn90Day.Size = New-Object System.Drawing.Size(200, 50)
 $btn90Day.Location = New-Object System.Drawing.Point(115, 220)
 $btn90Day.Add_Click({ $pnlOffboard.Visible = $false; $pnl90Day.Visible = $true })
@@ -208,25 +274,34 @@ $pnlOffboardEmp = New-Object System.Windows.Forms.Panel
 $pnlOffboardEmp.Size = $form.ClientSize
 $pnlOffboardEmp.Visible = $false
 
+$lblOffboardEmpTitle = New-Object System.Windows.Forms.Label
+$lblOffboardEmpTitle.Text = "Initial Employee Offboarding"
+$lblOffboardEmpTitle.Location = New-Object System.Drawing.Point(0, 50)
+$lblOffboardEmpTitle.Size = New-Object System.Drawing.Size($form.ClientSize.Width, 30)
+$lblOffboardEmpTitle.AutoSize = $false
+$lblOffboardEmpTitle.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$lblOffboardEmpTitle.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+$pnlOffboardEmp.Controls.Add($lblOffboardEmpTitle)
+
 $lblSearch = New-Object System.Windows.Forms.Label
 $lblSearch.Text = "Enter Employee Full Name or Username:"
-$lblSearch.Location = New-Object System.Drawing.Point(30, 80)
+$lblSearch.Location = New-Object System.Drawing.Point(30, 90)
 $lblSearch.AutoSize = $true
 $pnlOffboardEmp.Controls.Add($lblSearch)
 
 $txtSearch = New-Object System.Windows.Forms.TextBox
-$txtSearch.Location = New-Object System.Drawing.Point(30, 110)
+$txtSearch.Location = New-Object System.Drawing.Point(30, 120)
 $txtSearch.Size = New-Object System.Drawing.Size(250, 25)
 $pnlOffboardEmp.Controls.Add($txtSearch)
 
 $btnSearchOffboard = New-Object System.Windows.Forms.Button
 $btnSearchOffboard.Text = "Search domain"
-$btnSearchOffboard.Location = New-Object System.Drawing.Point(30, 150)
+$btnSearchOffboard.Location = New-Object System.Drawing.Point(30, 160)
 $btnSearchOffboard.Size = New-Object System.Drawing.Size(150, 40)
 $pnlOffboardEmp.Controls.Add($btnSearchOffboard)
 
 $lblOffboardStatus = New-Object System.Windows.Forms.Label
-$lblOffboardStatus.Location = New-Object System.Drawing.Point(30, 210)
+$lblOffboardStatus.Location = New-Object System.Drawing.Point(30, 220)
 $lblOffboardStatus.Size = New-Object System.Drawing.Size(380, 180) 
 $pnlOffboardEmp.Controls.Add($lblOffboardStatus)
 
@@ -249,8 +324,10 @@ $pnl90Day.Visible = $false
 
 $lbl90DayTitle = New-Object System.Windows.Forms.Label
 $lbl90DayTitle.Text = "Permanent Employee Account Deletion"
-$lbl90DayTitle.Location = New-Object System.Drawing.Point(30, 50)
-$lbl90DayTitle.AutoSize = $true
+$lbl90DayTitle.Location = New-Object System.Drawing.Point(0, 50)
+$lbl90DayTitle.Size = New-Object System.Drawing.Size($form.ClientSize.Width, 30)
+$lbl90DayTitle.AutoSize = $false
+$lbl90DayTitle.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
 $lbl90DayTitle.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
 $pnl90Day.Controls.Add($lbl90DayTitle)
 
@@ -293,8 +370,17 @@ $pnlNewHire = New-Object System.Windows.Forms.Panel
 $pnlNewHire.Size = $form.ClientSize
 $pnlNewHire.Visible = $false
 
+$lblNewHireTitle = New-Object System.Windows.Forms.Label
+$lblNewHireTitle.Text = "Enter Employee Information"
+$lblNewHireTitle.Location = New-Object System.Drawing.Point(0, 50)
+$lblNewHireTitle.Size = New-Object System.Drawing.Size($form.ClientSize.Width, 30)
+$lblNewHireTitle.AutoSize = $false
+$lblNewHireTitle.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$lblNewHireTitle.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+$pnlNewHire.Controls.Add($lblNewHireTitle)
+
 # function to generate labels/inputs
-$y = 60
+$y = 90
 function Add-FormField ($labelText, $control) {
     $lbl = New-Object System.Windows.Forms.Label
     $lbl.Text = $labelText
@@ -325,7 +411,7 @@ $cmbLocation.Add_SelectedIndexChanged({
     $selectedLocation = $cmbLocation.SelectedItem
     $locData = $Global:ConfigData[$selectedLocation]
 
-    # update offices
+    # offices
     $cmbOffice.Items.Clear()
     $locData.Offices.Keys | ForEach-Object { [void]$cmbOffice.Items.Add($_) }
     
@@ -336,7 +422,7 @@ $cmbLocation.Add_SelectedIndexChanged({
         $cmbOffice.SelectedIndex = -1
     }
 
-    # update departments
+    # departments
     $cmbDept.Items.Clear()
     $locData.Departments | Sort-Object | ForEach-Object { [void]$cmbDept.Items.Add($_) }
     $cmbDept.SelectedIndex = -1
@@ -359,7 +445,7 @@ Add-FormField "Office/Hybrid:" $cmbDesc
 $txtManager = New-Object System.Windows.Forms.TextBox
 Add-FormField "Manager (Name):" $txtManager
 
-# submit button
+# submit btn
 $script:y += 10
 $btnSubmit = New-Object System.Windows.Forms.Button
 $btnSubmit.Text = "Create AD User"
@@ -450,9 +536,7 @@ $pnlNewHire.Controls.Add($btnBackOnboard)
 # trigger init data load - defaults to US
 $cmbLocation.SelectedItem = "BlueStar US"
 
-# ==============================================================================
 # AD ONBOARDING LOGIC
-# ==============================================================================
 $btnSubmit.Add_Click({
     $lblStatus.ForeColor = [System.Drawing.Color]::Black
     $lblStatus.Text = "Processing..."
@@ -510,7 +594,7 @@ $btnSubmit.Add_Click({
         }
     }
 
-    # Create the AD User Object
+    # creates AD User Object
     try {
         $pass = ConvertTo-SecureString "Password1!" -AsPlainText -Force
         
@@ -573,9 +657,7 @@ $btnSubmit.Add_Click({
 })
 
 
-# ==============================================================================
 # AD OFFBOARDING LOGIC
-# ==============================================================================
 $btnSearchOffboard.Add_Click({
     $lblOffboardStatus.Text = "Searching Active Directory..."
     $lblOffboardStatus.ForeColor = [System.Drawing.Color]::Black
@@ -649,10 +731,10 @@ $btnSearchOffboard.Add_Click({
             Remove-ADPrincipalGroupMembership -Identity $targetUser -MemberOf $userGroups -Confirm:$false -ErrorAction Continue
         }
 
-        # 5. clear Department and IP Phone tab
+        # 5. clear Dept. and IP Phone tab
         Set-ADUser -Identity $targetUser -Clear Department, ipPhone -ErrorAction Stop
 
-        # final Success State formatting using a here-string for clean line breaks
+        # final success conf
         $successText = @"
 Complete! $($targetUser.Name) has been successfully offboarded.
 - Password changed to: Terminated1!
@@ -674,9 +756,7 @@ Complete! $($targetUser.Name) has been successfully offboarded.
 })
 
 
-# ==============================================================================
 # AD 90-DAY DELETION LOGIC
-# ==============================================================================
 $btnSearch90Day.Add_Click({
     $lbl90DayStatus.Text = "Searching Active Directory..."
     $lbl90DayStatus.ForeColor = [System.Drawing.Color]::Black
