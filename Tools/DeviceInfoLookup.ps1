@@ -56,9 +56,9 @@ while ($true) {
     $SearchString = $null
 
     Write-Host "          =================BSTools=================" -ForegroundColor Blue
-    Write-Host "                  BlueStarIT Lookup Tool v2.0" -ForegroundColor White
-    Write-Host "                  Developed by: Chase Bezilla" -ForegroundColor DarkGray
-    Write-Host "                   For BlueStar, Inc. (2026)" -ForegroundColor DarkGray
+    Write-Host "                 BlueStarIT Lookup Tool v2.1" -ForegroundColor White
+    Write-Host "                 Developed by: Chase Bezilla" -ForegroundColor DarkGray
+    Write-Host "                  For BlueStar, Inc. (2026)" -ForegroundColor DarkGray
     Write-Host "          ============github.com/xezixa============" -ForegroundColor Blue
     
     Write-Host "`n[?] Enter BlueStar Computer Name, Username, or Employee Name: " -ForegroundColor Yellow -NoNewLine
@@ -268,13 +268,18 @@ while ($true) {
             $MfgDate = if ($BIOS.ReleaseDate) { "$($BIOS.ReleaseDate.ToString('MMM yyyy')) (BIOS Date)" } else { "Unknown" } 
         } 
 
-        # system age calc
+        # system age calc & coloring
+        $AgeColor = "White"
         if ($MfgDate -ne "Unknown" -and $MfgDate -notmatch "Parse Error") { 
             if ($MfgDate -match "(\d{4})") {
                 $calcYear = [int]$Matches[1]
                 $ageYears = (Get-Date).Year - $calcYear
                 $sourceText = if ($MfgDate -match "(\(.*\))") { $Matches[1] } else { "" }
                 
+                if ($ageYears -ge 5) { $AgeColor = "Red" }
+                elseif ($ageYears -ge 4) { $AgeColor = "Yellow" }
+                else { $AgeColor = "Green" }
+
                 if ($ageYears -eq 0) { $MfgDate = "< 1 Year $sourceText" }
                 elseif ($ageYears -eq 1) { $MfgDate = "1 Year $sourceText" }
                 else { $MfgDate = "$ageYears Years $sourceText" }
@@ -336,15 +341,18 @@ while ($true) {
             }
         }
         
-        $UptimeColor = "White"
-        if ($Uptime.Days -ge 30) { $UptimeColor = "Red" } elseif ($Uptime.Days -ge 14) { $UptimeColor = "Yellow" }
+        $UptimeColor = "Green"
+        if ($Uptime.Days -ge 5) { $UptimeColor = "Red" } 
+        elseif ($Uptime.Days -ge 3) { $UptimeColor = "Yellow" }
 
         $PwdColor = "White"
         if ($PasswordExpires -ne "Never" -and $PasswordExpires -match "\d") {
             try {
                 $ExpDate = [datetime]::ParseExact($PasswordExpires, "MM/dd/yyyy hh:mm tt", $null)
                 $DaysLeft = ($ExpDate - (Get-Date)).Days
-                if ($DaysLeft -le 0) { $PwdColor = "Red" } elseif ($DaysLeft -le 14) { $PwdColor = "Yellow" } else { $PwdColor = "Green" }
+                if ($DaysLeft -le 30) { $PwdColor = "Red" } 
+                elseif ($DaysLeft -le 60) { $PwdColor = "Yellow" } 
+                else { $PwdColor = "Green" }
             } catch {}
         }
         
@@ -356,15 +364,15 @@ while ($true) {
         Write-2Col "" "" "Department:" $Department
         Write-2Col "Pwd Set:" $PasswordLastSet "Position:" $Role
         Write-2Col "Pwd Expires:" $PasswordExpires "" "" $PwdColor "White"
-        Write-2Col "" "" "Reports To:" $ReportsTo
+        Write-2Col "" "" "Manager:" $ReportsTo
         
         Write-SectionHeader "SYSTEM INFO"
         Write-2Col "Device Name:" $ComputerName "Device Model:" $ModelString
-        Write-2Col "Logged On:" $CurrentUser "Device Age:" $MfgDate
-        Write-2Col "Uptime:" $UptimeString "Serial Num:" $SN "White" $UptimeColor
+        Write-2Col "Logged On:" $CurrentUser "Device Age:" $MfgDate "White" $AgeColor
+        Write-2Col "Uptime:" $UptimeString "Serial Number:" $SN $UptimeColor "White"
         Write-2Col "" "" "" ""
         Write-2Col "IPv4 Address:" $IPAddress "RAM:" $RamString
-        Write-2Col "OS Ver:" $SimpOS "CPU:" $SimpCPU
+        Write-2Col "OS Version:" $SimpOS "CPU:" $SimpCPU
     } 
 
     $UserProfilesPath = "\\$ComputerName\C$\Users" 
@@ -381,11 +389,17 @@ while ($true) {
         }
         
         Write-SectionHeader "STORAGE & DATA"
+        Write-Host ""
         
         $PctUsed = 0
         if ($Disk -and $Disk.Size -gt 0) { $PctUsed = [math]::Round((($Disk.Size - $Disk.FreeSpace) / $Disk.Size) * 100, 1) }
         $StorageBar = Get-ProgressBar $PctUsed 25
-        Write-1Col "Available Storage:" "$StorageBar $PctUsed% Used ($CFreeGB GB free of $CSizeGB GB)"
+
+        $StorageColor = "Green"
+        if ($PctUsed -gt 70) { $StorageColor = "Red" }
+        elseif ($PctUsed -gt 40) { $StorageColor = "Yellow" }
+
+        Write-1Col "Available Storage:" "$StorageBar $PctUsed% Used ($CFreeGB GB free of $CSizeGB GB)" $StorageColor
 
         $FoundOutlookFiles = $false 
         foreach ($User in $Users) { 
@@ -411,8 +425,12 @@ while ($true) {
                     $LocalDir = $File.DirectoryName -replace [regex]::Escape($UserShareBase), "~" -replace "(?i)\\\\$ComputerName\\c\$", "C:"
                     $Bar = Get-ProgressBar $Pct 16
                     
+                    $FileColor = "Cyan"
+                    if ($Pct -ge 70) { $FileColor = "Red" }
+                    elseif ($Pct -gt 40) { $FileColor = "Yellow" }
+                    
                     Write-Host ""
-                    Write-1Col ".OST:" "$Bar $FileSizeGB GB ($Pct%)  |  $($File.Name)" "Cyan"
+                    Write-1Col ".OST:" "$Bar $FileSizeGB GB ($Pct%)  |  $($File.Name)" $FileColor
                     Write-1Col "" "Path: $LocalDir" "DarkGray"
                 } 
                 foreach ($File in $PstFiles) { 
@@ -421,10 +439,16 @@ while ($true) {
                     $Pct = [math]::Round((($File.Length / 1GB) / 50) * 100, 1)
                     $LocalDir = $File.DirectoryName -replace [regex]::Escape($UserShareBase), "~" -replace "(?i)\\\\$ComputerName\\c\$", "C:"
                     $Bar = Get-ProgressBar $Pct 16
+                    $DateCreated = $File.CreationTime.ToString("MM/dd/yyyy")
+                    
+                    $FileColor = "Cyan"
+                    if ($Pct -ge 70) { $FileColor = "Red" }
+                    elseif ($Pct -gt 40) { $FileColor = "Yellow" }
                     
                     Write-Host ""
-                    Write-1Col ".PST:" "$Bar $FileSizeGB GB ($Pct%)  |  $($File.Name)" "Cyan"
+                    Write-1Col ".PST:" "$Bar $FileSizeGB GB ($Pct%)  |  $($File.Name)" $FileColor
                     Write-1Col "" "Path: $LocalDir" "DarkGray"
+                    Write-1Col "" "Created: $DateCreated" "DarkGray"
                 }
             }
         } 
