@@ -32,7 +32,7 @@
 
 <h3>Account & Identity Details</h3>
 
-- <b>Live AD Data</b> | <i>(Extracts real-time AD account info for the currently logged-on user)</i>
+- <b>Live AD Data</b> | <i>(Extracts real-time AD account info for currently logged-on user)</i>
 - <b>User Info</b> | <i>(Displays Full Name, Username, Email, Office, Department, Position, and Direct Manager)</i>
 - <b>Password Lifecycle</b> | <i>(Calculates and displays when the password was last set and when it expires)</i>
 - <b>Smart Formatting</b> | <i>(Color-codes password expiration dates: Red for <30 days, Yellow for <60 days)</i>
@@ -41,9 +41,9 @@
 
 <h3>Hardware & System Health</h3>
 
-- <b>Intelligent Device Age Calc</b> | <i>(Dynamically calculates the physical age of the machine using fallback methods like HP serials, Lenovo SMBIOS/Battery dates, or universal CPU/BIOS parsing)</i>
-- <b>Uptime Tracking</b> | <i>(Displays system uptime, highlighting in yellow for >3 days or red for >5 days to easily spot reboot issues)</i>
-- <b>Simplified Specs</b> | <i>(Cleans up verbose WMI strings for OS version and CPU models to keep the dashboard clean)</i>
+- <b>Intelligent Device Age Calc</b> | <i>(Dynamically calculates the approx. age of a machine using fallback methods like HP serials, or CPU/BIOS parsing)</i>
+- <b>Uptime Tracking</b> | <i>(Displays system uptime, colored yellow for >3 days. Red for >5 days to spot reboot issues)</i>
+- <b>Simplified Specs</b> | <i>(Cleans up verbose WMI strings for OS version and CPU models to keep dashboard clean)</i>
 
 <br>
 
@@ -75,7 +75,7 @@
 
 *Eliminates manual AD configuration steps, ensuring all new hires and terminations are processed consistently, securely, and rapidly.*
 
-<img width="329" height="483" alt="1" src="https://github.com/user-attachments/assets/a56c236b-9ee2-4417-b58b-3e8508be6a7e" /> <img width="335" height="489" alt="2" src="https://github.com/user-attachments/assets/c002628c-cec2-4251-96fc-3ac50c8e3fb1" /> <img width="329" height="484" alt="3" src="https://github.com/user-attachments/assets/c020e061-e71c-4619-821c-8c08c6524750" />
+<img width="329" height="483" alt="1" src="https://github.com/user-attachments/assets/a56c236b-9ee2-4417-b58b-3e8508be6a7e" /> <img width="335" height="489" alt="2" src="https://github.com/user-attachments/assets/c002628c-cec2-4251-96fc-3ac50c8e3fb1" />
 
 
 
