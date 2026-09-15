@@ -10,17 +10,20 @@ if (Get-Module -ListAvailable ActiveDirectory) {
 while ($true) { 
     Clear-Host 
     
+    # reset search state
+    $ADUser = $null
+    $SearchString = $null
+
     # cool banner
     Write-Host "          =================BSTools=================" -ForegroundColor Blue
-    Write-Host "                 BlueStarIT Lookup Tool v1.7" -ForegroundColor White
-    Write-Host "                 Developed by: Chase Bezilla" -ForegroundColor DarkGray
-    Write-Host "                  For BlueStar, Inc. (2026)" -ForegroundColor DarkGray
+    Write-Host "                  BlueStarIT Lookup Tool v1.8" -ForegroundColor White
+    Write-Host "                  Developed by: Chase Bezilla" -ForegroundColor DarkGray
+    Write-Host "                   For BlueStar, Inc. (2026)" -ForegroundColor DarkGray
     Write-Host "          ============github.com/xezixa============" -ForegroundColor Blue
     
     # prompt for target computer name, username, or full name 
-
-Write-Host "`n[?] Enter BlueStar Computer Name, Username, or Employee Name: " -ForegroundColor Yellow -NoNewLine
-$SearchTarget = Read-Host
+    Write-Host "`n[?] Enter BlueStar Computer Name, Username, or Employee Name: " -ForegroundColor Yellow -NoNewLine
+    $SearchTarget = Read-Host
 
     Write-Host "`n---------------------------------------------------" -ForegroundColor Yellow
     
@@ -41,11 +44,11 @@ $SearchTarget = Read-Host
             if ($SearchTarget -notmatch "\s") { 
                 try { 
                     # attempt to find an AD User with this exact username (sAMAccountName) 
-                    $ADUser = Get-ADUser -Identity $SearchTarget -Properties GivenName, Surname -Server "bluestarinc.com" -ErrorAction Stop 
+                    $ADUser = Get-ADUser -Identity $SearchTarget -Properties GivenName, Surname, DisplayName, Office, Title, Department, Manager, Mail, PasswordLastSet, "msDS-UserPasswordExpiryTimeComputed", PasswordNeverExpires, physicalDeliveryOfficeName -Server "bluestarinc.com" -ErrorAction Stop 
                     
                     # if found, format to "first last" to match computer description 
                     $SearchString = "$($ADUser.GivenName) $($ADUser.Surname)".Trim() 
-                    Write-Host "`n[-] Username Found!: '$SearchTarget' | Employee Name: $SearchString" -ForegroundColor Cyan 
+                    Write-Host "`n[*] Username Found!: '$SearchTarget' | Employee Name: $SearchString" -ForegroundColor Cyan 
                 }  
                 catch { 
                     # if Get-ADUser fails then it's not a valid username. treat it as a first name. 
@@ -122,7 +125,7 @@ $SearchTarget = Read-Host
 
     Write-Host "`n---------------------------------------------------" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "            - Connected to: $ComputerName -" -ForegroundColor Green
+    Write-Host "             - Connected to: $ComputerName -" -ForegroundColor Green
     Write-Host ""
     Write-Host "[-] Grabbing useful information..." -ForegroundColor White
 
@@ -156,7 +159,7 @@ $SearchTarget = Read-Host
         if ($CimSession) { Remove-CimSession $CimSession -ErrorAction SilentlyContinue } 
         
         try { 
-            # attempt 2: DCOM fallback 
+            # attempt 2: DCOM 
             $DcomOption = New-CimSessionOption -Protocol Dcom 
             $CimSession = New-CimSession -ComputerName $ComputerName -SessionOption $DcomOption -ErrorAction Stop 
             
@@ -175,7 +178,7 @@ $SearchTarget = Read-Host
         } 
     } 
 
-    # DISPLAY SYSTEM INFO 
+    # DISPLAY SYSTEM & ACCOUNT INFO 
     if ($DataGathered) { 
         Write-Host "[*] Protocol Used: $ProtocolUsed" -ForegroundColor Cyan
         Write-Host ""
@@ -274,23 +277,102 @@ $SearchTarget = Read-Host
 
         $CSizeGB = if ($Disk) { [math]::Round(($Disk.Size / 1GB), 2) } else { 0 } 
         $CFreeGB = if ($Disk) { [math]::Round(($Disk.FreeSpace / 1GB), 2) } else { 0 } 
+
+        # ACCOUNT RESOLUTION LOGIC
+        $ADAccount = $null
+        $TargetUsername = $null
+
+        if ($CurrentUser -and $CurrentUser -ne "None / System") {
+            $TargetUsername = $CurrentUser.Split('\')[-1]
+        } elseif ($ADUser) {
+            $TargetUsername = $ADUser.sAMAccountName
+        }
+
+        if (Get-Command Get-ADUser -ErrorAction SilentlyContinue) {
+            if ($TargetUsername) {
+                $ADAccount = Get-ADUser -Identity $TargetUsername -Properties DisplayName, Office, Title, Department, Manager, sAMAccountName, Mail, PasswordLastSet, "msDS-UserPasswordExpiryTimeComputed", PasswordNeverExpires, physicalDeliveryOfficeName -Server "bluestarinc.com" -ErrorAction SilentlyContinue
+            } elseif ($SearchString -and ($SearchTarget -notmatch "^BS(US|CA|MX|LA)\d+")) {
+                $ADAccount = Get-ADUser -Filter "DisplayName -like '$SearchString*' -or Name -like '$SearchString*'" -Properties DisplayName, Office, Title, Department, Manager, sAMAccountName, Mail, PasswordLastSet, "msDS-UserPasswordExpiryTimeComputed", PasswordNeverExpires, physicalDeliveryOfficeName -Server "bluestarinc.com" -ErrorAction SilentlyContinue | Select-Object -First 1
+            }
+        }
+
+        # ACCOUNT INFORMATION DISPLAY
+        Write-Host "- - - ACCOUNT INFORMATION - - -" -ForegroundColor Blue
+        Write-Host ""
+        if ($ADAccount) {
+            $Username = $ADAccount.sAMAccountName
+            $FullName = if ($ADAccount.DisplayName) { $ADAccount.DisplayName } else { "$($ADAccount.GivenName) $($ADAccount.Surname)".Trim() }
+            $EmailAddress = if ($ADAccount.Mail) { $ADAccount.Mail } elseif ($ADAccount.UserPrincipalName) { $ADAccount.UserPrincipalName } else { "None" }
+
+            $Office = if ($ADAccount.Office) { $ADAccount.Office } elseif ($ADAccount.physicalDeliveryOfficeName) { $ADAccount.physicalDeliveryOfficeName } else { "None" }
+            $Department = if ($ADAccount.Department) { $ADAccount.Department } else { "None" }
+            $Position = if ($ADAccount.Title) { $ADAccount.Title } else { "None" }
+            
+            $ReportsTo = "None"
+            if ($ADAccount.Manager) {
+                if ($ADAccount.Manager -match "^CN=([^,]+)") {
+                    $ReportsTo = $Matches[1]
+                } else {
+                    $ReportsTo = $ADAccount.Manager
+                }
+            }
+
+            $PasswordLastSet = if ($ADAccount.PasswordLastSet) { $ADAccount.PasswordLastSet.ToString("MM/dd/yyyy hh:mm tt") } else { "Unknown" }
+
+            $PasswordExpires = "Unknown"
+            if ($ADAccount.PasswordNeverExpires) {
+                $PasswordExpires = "Never"
+            } elseif ($ADAccount."msDS-UserPasswordExpiryTimeComputed") {
+                $val = $ADAccount."msDS-UserPasswordExpiryTimeComputed"
+                try {
+                    if ($val -eq 0x7FFFFFFFFFFFFFFF) {
+                        $PasswordExpires = "Never"
+                    } elseif ($val -is [int64] -or $val -is [long]) {
+                        $PasswordExpires = ([DateTime]::FromFileTime($val)).ToString("MM/dd/yyyy hh:mm tt")
+                    } elseif ($val -is [DateTime]) {
+                        $PasswordExpires = $val.ToString("MM/dd/yyyy hh:mm tt")
+                    }
+                } catch {
+                    $PasswordExpires = "Calculation Error"
+                }
+            }
+
+            Write-Host "Username:           $Username"
+            Write-Host "Full Name:          $FullName"
+            Write-Host "Email Address:      $EmailAddress`n"
+
+            Write-Host "Office:             $Office"
+            Write-Host "Department:         $Department"
+            Write-Host "Position:           $Position"
+            Write-Host "Reports To:         $ReportsTo`n"
+
+            Write-Host "Password Last Set:  $PasswordLastSet"
+            Write-Host "Password Expires:   $PasswordExpires`n"
+        } else {
+            Write-Host " [~] No active domain account detected for this session.`n" -ForegroundColor DarkGray
+        }
+        Write-Host ""
         
+        # DEVICE INFORMATION DISPLAY
         Write-Host "- - - DEVICE INFORMATION - - -" -ForegroundColor Blue
         Write-Host ""
-        Write-Host "Logged On:         $CurrentUser`n" 
-        Write-Host "Device Model:      $ModelString" 
-        Write-Host "Est. MFG Year:     $MfgDate"  
-        Write-Host "Serial Number:     $SN`n" 
-        Write-Host "IPv4 Address:      $IPAddress" 
-        Write-Host "Windows Version:   $($OS.Caption) ($($OS.Version))" 
-        Write-Host "Current Uptime:    $UptimeString`n" 
+        Write-Host "Device Name:        $ComputerName"
+        Write-Host "Logged On:          $CurrentUser`n"
+
+        Write-Host "Device Model:       $ModelString" 
+        Write-Host "Est. MFG Year:      $MfgDate"  
+        Write-Host "Serial Number:      $SN`n" 
+
+        Write-Host "IPv4 Address:       $IPAddress" 
+        Write-Host "Windows Version:    $($OS.Caption) ($($OS.Version))" 
+        Write-Host "Current Uptime:     $UptimeString`n" 
         Write-Host ""
 
         Write-Host "- - - SPECIFICATIONS  - - -" -ForegroundColor Blue
         Write-Host ""
-        Write-Host "CPU:               $($CPU.Name)" 
-        Write-Host "C Drive:           $CSizeGB GB (Free: $CFreeGB GB)" 
-        Write-Host "RAM:               $RamGB GB`n" 
+        Write-Host "CPU:                $($CPU.Name)" 
+        Write-Host "C Drive:            $CSizeGB GB (Free: $CFreeGB GB)" 
+        Write-Host "RAM:                $RamGB GB`n" 
         Write-Host ""
     } 
 
@@ -343,9 +425,9 @@ $SearchTarget = Read-Host
                     $LocalDir = $File.Directory.FullName.Replace("\\$ComputerName\C$", "C:").Replace("\\$ComputerName\c$", "C:")
                     
                     Write-Host "Live Data (.OST)" -ForegroundColor Magenta
-                    Write-Host "File Name:         $($File.Name)" -ForegroundColor Gray
-                    Write-Host "File Size:         $FileSizeGB GB / 50 GB | $Pct% Full" -ForegroundColor Gray
-                    Write-Host "Location:          $LocalDir" -ForegroundColor Gray
+                    Write-Host "File Name:          $($File.Name)" -ForegroundColor Gray
+                    Write-Host "File Size:          $FileSizeGB GB / 50 GB | $Pct% Full" -ForegroundColor Gray
+                    Write-Host "Location:           $LocalDir" -ForegroundColor Gray
                     Write-Host ""
                 } 
 
@@ -357,16 +439,16 @@ $SearchTarget = Read-Host
                     $LocalDir = $File.Directory.FullName.Replace("\\$ComputerName\C$", "C:").Replace("\\$ComputerName\c$", "C:")
                     
                     Write-Host "Archive Data (.PST)" -ForegroundColor Magenta
-                    Write-Host "File Name:         $($File.Name)" -ForegroundColor Gray
-                    Write-Host "File Size:         $FileSizeGB GB / 50 GB | $Pct% Full" -ForegroundColor Gray
-                    Write-Host "Location:          $LocalDir" -ForegroundColor Gray
+                    Write-Host "File Name:          $($File.Name)" -ForegroundColor Gray
+                    Write-Host "File Size:          $FileSizeGB GB / 50 GB | $Pct% Full" -ForegroundColor Gray
+                    Write-Host "Location:           $LocalDir" -ForegroundColor Gray
                     Write-Host ""
                 }
             }
         } 
         
         if (-not $FoundOutlookFiles) { 
-            Write-Host "No Outlook data files found for active user." -ForegroundColor Gray 
+            Write-Host " [~] No Outlook data files found for active user." -ForegroundColor DarkGray 
             Write-Host ""
         } 
 
@@ -382,7 +464,7 @@ $SearchTarget = Read-Host
                 Write-Host "`nScanning active user directories... [Press 'S' at any time to skip a folder]" -ForegroundColor DarkGray
                 Write-Host ""
                 
-                foreach ($User in $Users) {
+                foreach ($User in $Users) { 
                     Write-Host "User: $($User.Name)" -ForegroundColor Gray
                     
                     $TargetFolders = @()
