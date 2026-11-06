@@ -1,6 +1,8 @@
 <#
 .SYNOPSIS
-    GUI based AD onboard/offboard & user management tool for BlueStar, Inc. 2026
+			GUI based AD onboard/offboard & user management tool
+				Made by Chase Bezilla | www.github.com/xezixa
+						For BlueStar, Inc. (2026)
 #>
 
 #req: -Modules ActiveDirectory
@@ -19,7 +21,7 @@ $Global:ConfigData = [ordered]@{
         Departments = @("Accounting", "Administration", "Business Analytics", "Executive", "IT", "Marketing", "Purchasing", "Sales", "Tech Support", "Warehouse");
         Offices = [ordered]@{
             "Corporate" = @{ Phone="(859) 371-4423 Ext. "; Company="BlueStar US"; Street="3345 Point Pleasant Road"; City="Hebron"; State="KY"; Zip="41048"; Country="US" };
-            "California" = @{ Phone="(949) 783-3388 Ext. "; Company="BlueStar US"; Street="23161 Mill Creek Drive, Suite 200"; City="Laguna Hills"; State="CA"; Zip="92653"; Country="US" };
+            "California" = @{ Phone="(949) 783-3388 Ext. "; Company="BlueStar US"; Street="25909 Pala Pl. Suite 120"; City="Mission Viejo"; State="CA"; Zip="92691"; Country="US" };
             "Cleveland" = @{ Phone="(800) 354-9776 Ext. "; Company="BlueStar US"; Street="212782 Prospect Road, Floor 2"; City="Strongsville"; State="OH"; Zip="44149"; Country="US" }
         }
     };
@@ -53,15 +55,50 @@ $DefaultGroups = @(
     "OWA_2FA", "BlueStar Barracuda"
 );
 
+$DivisionGroupMap = @{
+    "BlueStar_US" = @{
+        "Accounting"     = @("Accounting US", "Acct_Calendar")
+        "Administration" = @("Human Resource")
+        "IT"             = @("BlueStar Global IT")
+        "Marketing"      = @("Marketing US")
+        "Purchasing"     = @("Purchasing US")
+        "Sales"          = @("Sales US")
+        "Tech Support"   = @("Tech Support US")
+        "Warehouse"      = @("Warehouse US")
+    };
+    "BlueStar_MX" = @{
+        "Marketing"      = @("Marketing MX")
+        "Purchasing"     = @("Purchasing MX")
+        "Sales"          = @("Sales MX", "Sales LA")
+        "Warehouse"      = @("Warehouse MX")
+    };
+    "BlueStar_LA" = @{
+        "Accounting"     = @("Accounting LA")
+        "Marketing"      = @("Marketing LA")
+        "Purchasing"     = @("Purchasing LA")
+        "Sales"          = @("Sales LA")
+        "Warehouse"      = @("Warehouse LA")
+    };
+    "BlueStar_CA" = @{
+        "Accounting"       = @("Accounting CA")
+        "Customer Service" = @("CSR CA")
+        "Marketing"        = @("Marketing CA")
+        "Sales"            = @("Sales CA")
+        "Tech Support"     = @("Technique")
+        "Warehouse"        = @("Warehouse CA")
+    }
+};
+
 # variables to hold state
 $script:provisionedUser = "";
 $script:targetUserDN = "";
 $script:targetUserSam = "";
+$script:deviceDNMap = @{};
 
 # script execution paths
 $script:mailboxScriptPath_Manual = "\\bsqnap\PST\RemoteMailboxProvisioning\Create-RemoteMailboxV2.ps1";
-$script:mailboxScriptPath_Auto = "S:\IT\it.priv\IT Support Desk\User & Asset Management\BSTools\Employee Onboarding-Offboarding Tool\Content\MailboxProvisionTool_Auto.ps1";
-$script:deviceInfoScriptPath = "S:\IT\it.priv\IT Support Desk\User & Asset Management\BSTools\Device Lookup Tool\Content\DeviceInfoLookup.ps1";
+$script:mailboxScriptPath_Auto = "C:\Users\cbezilla\Documents\Skrips\MailboxProvisionTool_Parameter.ps1";
+$script:deviceInfoScriptPath = "C:\Users\cbezilla\Desktop\DeviceInfoLookup.ps1";
 
 # =============
 # HELPER FUNCT.
@@ -202,6 +239,126 @@ function Show-InputPrompt {
     return $null;
 }
 
+function Show-OUPicker {
+    $moveForm = New-Object System.Windows.Forms.Form
+    $moveForm.Text = "Move"
+    $moveForm.Size = New-Object System.Drawing.Size(380, 440)
+    $moveForm.StartPosition = "CenterParent"
+    $moveForm.FormBorderStyle = "FixedDialog"
+    $moveForm.MaximizeBox = $false
+    $moveForm.MinimizeBox = $false
+    
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = "Move object into container:"
+    $lbl.Location = New-Object System.Drawing.Point(12, 12)
+    $lbl.AutoSize = $true
+    $moveForm.Controls.Add($lbl)
+
+    # recreation of AD container list window 
+    $imgList = New-Object System.Windows.Forms.ImageList
+    $imgList.ImageSize = New-Object System.Drawing.Size(16, 16)
+    $imgList.ColorDepth = [System.Windows.Forms.ColorDepth]::Depth32Bit
+
+    $bmpDom = New-Object System.Drawing.Bitmap(16, 16)
+    $gDom = [System.Drawing.Graphics]::FromImage($bmpDom)
+    $gDom.FillRectangle([System.Drawing.Brushes]::SteelBlue, 2, 2, 12, 12)
+    $gDom.DrawRectangle([System.Drawing.Pens]::Navy, 2, 2, 12, 12)
+    $gDom.Dispose()
+
+    $bmpFld = New-Object System.Drawing.Bitmap(16, 16)
+    $gFld = [System.Drawing.Graphics]::FromImage($bmpFld)
+    $gFld.FillRectangle([System.Drawing.Brushes]::Goldenrod, 1, 3, 6, 2)
+    $gFld.FillRectangle([System.Drawing.Brushes]::Gold, 1, 5, 14, 9)
+    $gFld.DrawRectangle([System.Drawing.Pens]::DarkGoldenrod, 1, 5, 14, 9)
+    $gFld.Dispose()
+
+    [void]$imgList.Images.Add("domain", $bmpDom)
+    [void]$imgList.Images.Add("folder", $bmpFld)
+
+    $tv = New-Object System.Windows.Forms.TreeView
+    $tv.Location = New-Object System.Drawing.Point(12, 35)
+    $tv.Size = New-Object System.Drawing.Size(340, 310)
+    $tv.ImageList = $imgList
+    $tv.ShowLines = $true
+    $tv.ShowPlusMinus = $true
+    $tv.ShowRootLines = $true
+    $tv.HideSelection = $false
+    $moveForm.Controls.Add($tv)
+
+    # nodes mapped by DistinguishedName so child OUs nest inside parent OUs
+    $nodeMap = @{}
+    $domainLabel = ($Domain -split '\.')[0]
+    $domainNode = New-Object System.Windows.Forms.TreeNode($domainLabel)
+    $domainNode.Tag = $BaseDN
+    $domainNode.ImageKey = "domain"
+    $domainNode.SelectedImageKey = "domain"
+    [void]$tv.Nodes.Add($domainNode)
+    $nodeMap[$BaseDN] = $domainNode
+    
+    try {
+        $OUs = Get-ADOrganizationalUnit -Filter * -Server $Domain -Properties DistinguishedName, Name -ErrorAction Stop
+        
+        $sortedOUs = $OUs | Sort-Object @{Expression = { ($_.DistinguishedName -split ',').Count }}, Name
+
+        foreach ($ou in $sortedOUs) {
+            $dn = $ou.DistinguishedName
+            $parentDN = ($dn -split ',', 2)[1]
+            
+            $newNode = New-Object System.Windows.Forms.TreeNode($ou.Name)
+            $newNode.Tag = $dn
+            $newNode.ImageKey = "folder"
+            $newNode.SelectedImageKey = "folder"
+
+            if ($nodeMap.ContainsKey($parentDN)) {
+                [void]$nodeMap[$parentDN].Nodes.Add($newNode)
+            } else {
+                [void]$domainNode.Nodes.Add($newNode)
+            }
+            $nodeMap[$dn] = $newNode
+        }
+        $domainNode.Expand()
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("Failed to load OUs: $($_.Exception.Message)", "Error", 0, [System.Windows.Forms.MessageBoxIcon]::Error)
+    }
+
+    $btnOk = New-Object System.Windows.Forms.Button
+    $btnOk.Text = "OK"
+    $btnOk.Size = New-Object System.Drawing.Size(75, 25)
+    $btnOk.Location = New-Object System.Drawing.Point(190, 360)
+    $btnOk.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $moveForm.Controls.Add($btnOk)
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "Cancel"
+    $btnCancel.Size = New-Object System.Drawing.Size(75, 25)
+    $btnCancel.Location = New-Object System.Drawing.Point(277, 360)
+    $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $moveForm.Controls.Add($btnCancel)
+
+    $moveForm.AcceptButton = $btnOk
+    $moveForm.CancelButton = $btnCancel
+
+    if ($moveForm.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        if ($tv.SelectedNode -and $tv.SelectedNode.Tag -ne $BaseDN) { 
+            return $tv.SelectedNode.Tag 
+        }
+    }
+    return $null
+}
+
+function Get-ShortContainerPath([string]$dn) {
+    if (-not $dn) { return "N/A" }
+    $parts = $dn -split ',' | Select-Object -Skip 1
+    $containerParts = $parts | Where-Object { $_ -match '^(OU|CN)=' }
+    
+    $cleanParts = [System.Collections.ArrayList]@()
+    foreach ($part in $containerParts) {
+        [void]$cleanParts.Add(($part -replace '^(OU|CN)=', ''))
+    }
+    $cleanParts.Reverse()
+    return ($cleanParts -join '\')
+}
+
 # ===
 # GUI
 # ===
@@ -336,7 +493,21 @@ $btnNewHire.Text = "Create New Hire";
 $btnNewHire.BackColor = [System.Drawing.Color]::LightGreen;
 $btnNewHire.Size = New-Object System.Drawing.Size(200, 50);
 $btnNewHire.Location = New-Object System.Drawing.Point(225, 150);
-$btnNewHire.Add_Click({ $pnlOnboard.Visible = $false; $pnlNewHire.Visible = $true; });
+$btnNewHire.Add_Click({ 
+    $pnlOnboard.Visible = $false; 
+    $pnlNewHire.Visible = $true; 
+
+    if ($txtManager.AutoCompleteCustomSource.Count -eq 0) {
+        try {
+            $users = Get-ADUser -Filter * -Properties DisplayName -ErrorAction SilentlyContinue;
+            $source = New-Object System.Windows.Forms.AutoCompleteStringCollection;
+            foreach ($u in $users) {
+                if ($u.Name) { [void]$source.Add($u.Name); }
+            }
+            $txtManager.AutoCompleteCustomSource = $source;
+        } catch { }
+    }
+});
 $pnlOnboard.Controls.Add($btnNewHire);
 
 $btnMailbox = New-Object System.Windows.Forms.Button;
@@ -385,7 +556,7 @@ $btnOffboardEmp.Add_Click({
     $pnlOffboard.Visible = $false; 
     $pnlOffboardEmp.Visible = $true; 
     
-    # autofill AD cached entries
+    # autofill
     if ($txtSearch.AutoCompleteCustomSource.Count -eq 0) {
         try {
             $users = Get-ADUser -Filter * -Properties DisplayName -ErrorAction SilentlyContinue;
@@ -650,6 +821,26 @@ $script:lblProfileTitle.Size = New-Object System.Drawing.Size(400, 20);
 $editToolTip.SetToolTip($script:lblProfileTitle, "Double-click to edit");
 $pnlUserProfile.Controls.Add($script:lblProfileTitle);
 
+$script:lblOnlineDot = New-Object System.Windows.Forms.Label;
+$script:lblOnlineDot.Text = [char]0x25CF; # Unicode solid circle (●)
+$script:lblOnlineDot.Font = New-Object System.Drawing.Font("Segoe UI", 14, [System.Drawing.FontStyle]::Bold);
+$script:lblOnlineDot.AutoSize = $true;
+$script:lblOnlineDot.Visible = $false;
+$pnlUserProfile.Controls.Add($script:lblOnlineDot);
+
+# 90-day offboarding warning banner
+$script:lblOffboardBanner = New-Object System.Windows.Forms.Label;
+$script:lblOffboardBanner.Text = "IN 90-DAY OFFBOARDING PHASE";
+$script:lblOffboardBanner.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold);
+$script:lblOffboardBanner.ForeColor = [System.Drawing.Color]::DarkRed;
+$script:lblOffboardBanner.BackColor = [System.Drawing.Color]::MistyRose;
+$script:lblOffboardBanner.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle;
+$script:lblOffboardBanner.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter;
+$script:lblOffboardBanner.Location = New-Object System.Drawing.Point(165, 8);
+$script:lblOffboardBanner.Size = New-Object System.Drawing.Size(320, 22);
+$script:lblOffboardBanner.Visible = $false;
+$pnlUserProfile.Controls.Add($script:lblOffboardBanner);
+
 $lblProfileDivider = New-Object System.Windows.Forms.Label;
 $lblProfileDivider.BackColor = [System.Drawing.Color]::LightSteelBlue;
 $lblProfileDivider.Size = New-Object System.Drawing.Size(610, 2);
@@ -689,12 +880,14 @@ function Add-DataRow($panel, $hdrText, $xHdr, $xVal, $y, [switch]$isEditable) {
 $script:rowDept = Add-DataRow $pnlUserProfile "Department:" 30 115 120 -isEditable
 $script:rowUser = Add-DataRow $pnlUserProfile "Username:" 30 115 160 
 $script:rowPhone = Add-DataRow $pnlUserProfile "Telephone:" 30 115 200 
-$script:rowOU = Add-DataRow $pnlUserProfile "Container:" 30 115 240 
-$script:rowOU.Val.Width = 500
+$script:rowUserOU = Add-DataRow $pnlUserProfile "User Container:" 30 145 240 -isEditable
+$script:rowUserOU.Val.Width = 470
+$script:rowDeviceOU = Add-DataRow $pnlUserProfile "Device Container:" 30 145 270 -isEditable
+$script:rowDeviceOU.Val.Width = 470
 
 $script:rowMgr = Add-DataRow $pnlUserProfile "Manager:" 350 420 120 -isEditable
 $script:rowEmail = Add-DataRow $pnlUserProfile "Email:" 350 420 160 
-$script:rowLoc = Add-DataRow $pnlUserProfile "Location:" 350 420 200 
+$script:rowLoc = Add-DataRow $pnlUserProfile "Location:" 350 420 200
 
 # assigned devices
 $gbDevices = New-Object System.Windows.Forms.GroupBox;
@@ -723,7 +916,7 @@ $script:lblPassExp = New-Object System.Windows.Forms.Label; $script:lblPassExp.L
 $script:lblLastLogon = New-Object System.Windows.Forms.Label; $script:lblLastLogon.Location = New-Object System.Drawing.Point(10, 75); $script:lblLastLogon.Size = New-Object System.Drawing.Size(280, 20); $script:lblLastLogon.Font = New-Object System.Drawing.Font("Segoe UI", 9); $gbSignOn.Controls.Add($script:lblLastLogon);
 $script:lblFailedLogon = New-Object System.Windows.Forms.Label; $script:lblFailedLogon.Location = New-Object System.Drawing.Point(10, 100); $script:lblFailedLogon.Size = New-Object System.Drawing.Size(280, 20); $script:lblFailedLogon.Font = New-Object System.Drawing.Font("Segoe UI", 9); $gbSignOn.Controls.Add($script:lblFailedLogon);
 
-# action buttons
+# action btns
 $gbActions = New-Object System.Windows.Forms.GroupBox;
 $gbActions.Text = "Administrative Actions";
 $gbActions.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold);
@@ -754,7 +947,7 @@ $lblActionStatus.Size = New-Object System.Drawing.Size(270, 20);
 $lblActionStatus.ForeColor = [System.Drawing.Color]::DarkGreen;
 $gbActions.Controls.Add($lblActionStatus);
 
-# security group membership box
+# security group membership window
 $gbGroups = New-Object System.Windows.Forms.GroupBox;
 $gbGroups.Text = "Group Memberships";
 $gbGroups.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold);
@@ -841,7 +1034,10 @@ $cmbDesc = New-Object System.Windows.Forms.ComboBox; $cmbDesc.DropDownStyle = 'D
 $descOptions = @("Hybrid", "Office", "Remote");
 foreach ($opt in ($descOptions)) { [void]($cmbDesc.Items.Add($opt)); }
 Add-FormField "Office/Hybrid:" $cmbDesc;
-$txtManager = New-Object System.Windows.Forms.TextBox; Add-FormField "Manager (Name):" $txtManager;
+$txtManager = New-Object System.Windows.Forms.TextBox;
+$txtManager.AutoCompleteMode = [System.Windows.Forms.AutoCompleteMode]::SuggestAppend;
+$txtManager.AutoCompleteSource = [System.Windows.Forms.AutoCompleteSource]::CustomSource;
+Add-FormField "Manager (Name):" $txtManager;
 
 $script:y += 10;
 $btnSubmit = New-Object System.Windows.Forms.Button;
@@ -935,11 +1131,20 @@ $btnSubmit.Add_Click({
     $email = "$sam@$Domain"; 
     $display = "$first $last";
     
-    $managerDN = $null;
-    if ($txtManager.Text) {
-        $mgr = Get-ADUser -Filter "Name -eq '$($txtManager.Text)'" -ErrorAction SilentlyContinue;
-        if ($mgr) { $managerDN = $mgr.DistinguishedName; } else {
-            [System.Windows.Forms.MessageBox]::Show("Manager '$($txtManager.Text)' not found in AD. Creating user without manager field.", "Warning", 0, [System.Windows.Forms.MessageBoxIcon]::Warning);
+   $managerDN = $null;
+    if (-not [string]::IsNullOrWhiteSpace($txtManager.Text)) {
+        $mgrSearch = $txtManager.Text.Trim();
+        $mgr = @(Get-ADUser -Filter "Name -eq `"$mgrSearch`" -or DisplayName -eq `"$mgrSearch`" -or sAMAccountName -eq `"$mgrSearch`"" -ErrorAction SilentlyContinue);
+        
+        if ($mgr.Count -eq 0) {
+            # fallback check in case user has a middle initial (ex: John E. Doe)
+            $mgr = @(Get-ADUser -Filter "Name -like `"*$mgrSearch*`" -or DisplayName -like `"*$mgrSearch*`"" -ErrorAction SilentlyContinue);
+        }
+
+        if ($mgr.Count -gt 0) { 
+            $managerDN = $mgr[0].DistinguishedName; 
+        } else {
+            [System.Windows.Forms.MessageBox]::Show("User '$mgrSearch' was not found in Active Directory. Creating user without manager field.", "Warning", 0, [System.Windows.Forms.MessageBoxIcon]::Warning);
         }
     }
 
@@ -949,7 +1154,25 @@ $btnSubmit.Add_Click({
         if ($managerDN) { $userParams.Add("Manager", $managerDN) };
 
         $newUser = New-ADUser @userParams -PassThru;
-        foreach ($group in ($DefaultGroups)) { Add-ADGroupMember -Identity $group -Members $newUser -ErrorAction SilentlyContinue; }
+
+        # build combined list of default groups + div/dept groups
+        $groupsToAssign = [System.Collections.Generic.List[string]]::new();
+        foreach ($g in $DefaultGroups) { $groupsToAssign.Add($g) }
+
+        $adDivision = $locData.ADName;
+        if ($DivisionGroupMap.ContainsKey($adDivision) -and $DivisionGroupMap[$adDivision].ContainsKey($deptString)) {
+            foreach ($divGroup in $DivisionGroupMap[$adDivision][$deptString]) {
+                $groupsToAssign.Add($divGroup);
+            }
+        }
+
+        if ($adDivision -eq "BlueStar_US" -and $deptString -eq "Sales" -and $officeName -eq "California") {
+            $groupsToAssign.Add("WestCoastSales");
+        }
+
+        foreach ($group in ($groupsToAssign | Select-Object -Unique)) { 
+            Add-ADGroupMember -Identity $group -Members $newUser -ErrorAction SilentlyContinue; 
+        }
         $script:provisionedUser = $sam;
 
         $lblStatus.ForeColor = [System.Drawing.Color]::Green; $lblStatus.Text = "User '" + $sam + "' created." + [Environment]::NewLine + "Please double-check the user properties in Active Directory:" + [Environment]::NewLine + $explorerPath;
@@ -967,7 +1190,7 @@ $btnSearchOffboard.Add_Click({$lblOffboardStatus.Text = "Searching Active Direct
     if (-not ($searchTerm)) {$lblOffboardStatus.Text = "Please enter a name or username."; $lblOffboardStatus.ForeColor = [System.Drawing.Color]::Red; return; }
 
     $targetUser =$null;
-    try { $targetUser = Get-ADUser -Filter "SamAccountName -eq '$searchTerm' -or Name -eq '$searchTerm' -or DisplayName -eq '$searchTerm'" -Properties DisplayName -ErrorAction Stop; } catch { $lblOffboardStatus.Text = "Error communicating with Active Directory."; $lblOffboardStatus.ForeColor = [System.Drawing.Color]::Red; return; }
+	try { $targetUser = Get-ADUser -LDAPFilter "(|(sAMAccountName=$searchTerm)(name=$searchTerm)(displayName=$searchTerm))" -Properties DisplayName -ErrorAction Stop; } catch { $lblOffboardStatus.Text = "Error communicating with Active Directory."; $lblOffboardStatus.ForeColor = [System.Drawing.Color]::Red; return; }
 
     if (($null) -eq ($targetUser)) { $lblOffboardStatus.Text = "User '" + $searchTerm + "' not found in Active Directory."; $lblOffboardStatus.ForeColor = [System.Drawing.Color]::Red; return; } elseif (($targetUser.Count) -gt 1) {$lblOffboardStatus.Text = "Multiple users found. Please search again using the exact username (SamAccountName)."; $lblOffboardStatus.ForeColor = [System.Drawing.Color]::Red; return; }
 
@@ -1054,7 +1277,7 @@ $btnSearchOffboard.Add_Click({$lblOffboardStatus.Text = "Searching Active Direct
     $txtSearch.Clear()
 });
 
-# 90 day deleton logic
+# 90-day deleton logic
 $btnSearch90Day.Add_Click({
     $lbl90DayStatus.Text = "Searching Active Directory..."; $lbl90DayStatus.ForeColor = [System.Drawing.Color]::Black; $form.Refresh();
 
@@ -1062,7 +1285,7 @@ $btnSearch90Day.Add_Click({
     if (-not ($searchTerm)) { $lbl90DayStatus.Text = "Please enter a name or username."; $lbl90DayStatus.ForeColor = [System.Drawing.Color]::Red; return; }
 
     $targetUser = $null;
-    try { $targetUser = Get-ADUser -Filter "SamAccountName -eq '$searchTerm' -or Name -eq '$searchTerm' -or DisplayName -eq '$searchTerm'" -ErrorAction Stop; } catch { $lbl90DayStatus.Text = "Error communicating with Active Directory."; $lbl90DayStatus.ForeColor = [System.Drawing.Color]::Red; return; }
+    try { $targetUser = Get-ADUser -Filter "SamAccountName -eq `"$searchTerm`" -or Name -eq `"$searchTerm`" -or DisplayName -eq `"$searchTerm`"" -ErrorAction Stop; } catch { $lbl90DayStatus.Text = "Error communicating with Active Directory."; $lbl90DayStatus.ForeColor = [System.Drawing.Color]::Red; return; }
 
     if (($null) -eq ($targetUser)) { $lbl90DayStatus.Text = "User '" + $searchTerm + "' not found in Active Directory."; $lbl90DayStatus.ForeColor = [System.Drawing.Color]::Red; return; } elseif (($targetUser.Count) -gt 1) { $lbl90DayStatus.Text = "Multiple users found. Please search again using the exact username (SamAccountName)."; $lbl90DayStatus.ForeColor = [System.Drawing.Color]::Red; return; }
 
@@ -1098,7 +1321,7 @@ $btnSearchUserExec.Add_Click({
     }
 
     try {
-       $targetUser = Get-ADUser -Filter "Name -eq '$searchTerm'" -Properties EmailAddress, Title, Department, Manager, Office, MemberOf, Description, GivenName, Surname, OfficePhone, PasswordLastSet, LastLogonDate, LastBadPasswordAttempt -ErrorAction Stop;
+      $targetUser = Get-ADUser -Filter "Name -eq `"$searchTerm`"" -Properties EmailAddress, Title, Department, Manager, Office, MemberOf, Description, GivenName, Surname, OfficePhone, PasswordLastSet, LastLogonDate, LastBadPasswordAttempt, CannotChangePassword -ErrorAction Stop;
         
         if ($null -eq $targetUser) {
             $lblSearchUserStatus.Text = "User '$searchTerm' not found.";
@@ -1121,12 +1344,24 @@ $btnSearchUserExec.Add_Click({
         }
 
         # parse container path
-        $ouArray = [System.Collections.ArrayList]($targetUser.DistinguishedName -split ',' | Where-Object { $_ -match '^OU=' } | ForEach-Object { $_ -replace '^OU=', '' })
-        $ouArray.Reverse()
-        $ouString = $ouArray -join '\'
+		$script:rowUserOU.Val.Text = Get-ShortContainerPath $targetUser.DistinguishedName
+        $script:rowUserOU.Val.Tag = $targetUser.DistinguishedName
 
-        # grid properties
+        # grid properties & dynamic name for status dot
         $script:lblProfileName.Text = $targetUser.Name;
+        $textSize = [System.Windows.Forms.TextRenderer]::MeasureText($targetUser.Name, $script:lblProfileName.Font);
+        $boxWidth = [Math]::Min(($textSize.Width + 16), 440);
+        $boxX = [int](325 - ($boxWidth / 2));
+        $script:lblProfileName.Size = New-Object System.Drawing.Size($boxWidth, 35);
+        $script:lblProfileName.Location = New-Object System.Drawing.Point($boxX, 35);
+        $script:lblOnlineDot.Location = New-Object System.Drawing.Point(($boxX + $boxWidth + 2), 37);
+
+        # check if account is in 90-day offboarding phase
+        if ((-not $targetUser.Enabled) -and ($targetUser.CannotChangePassword)) {
+            $script:lblOffboardBanner.Visible = $true;
+        } else {
+            $script:lblOffboardBanner.Visible = $false;
+        }
         $displayTitle = if ($targetUser.Title) { $targetUser.Title } else { "No Title Defined" }
         $script:lblProfileTitle.Text = $displayTitle;
 
@@ -1136,7 +1371,8 @@ $btnSearchUserExec.Add_Click({
         $script:rowEmail.Val.Text = if ($targetUser.EmailAddress) { $targetUser.EmailAddress } else { "N/A" }
         $script:rowPhone.Val.Text = if ($targetUser.OfficePhone) { $targetUser.OfficePhone } else { "N/A" }
         $script:rowLoc.Val.Text = if ($targetUser.Office) { $targetUser.Office } else { "N/A" }
-        $script:rowOU.Val.Text = if ($ouString) { "$Domain\$ouString" } else { "$Domain\Users" }
+        $script:rowUserOU.Val.Text = Get-ShortContainerPath $targetUser.DistinguishedName
+		$script:rowUserOU.Val.Tag = $targetUser.DistinguishedName
 		
 		# sign-on details & expiry coloring
         if ($targetUser.PasswordLastSet) {
@@ -1173,25 +1409,81 @@ $btnSearchUserExec.Add_Click({
             [void]$lbGroups.Items.Add("No Groups Found")
         }
 
-        # filter for devices based on the users name
-      $lbDevices.Items.Clear();
+# filter for devices based on the users name & ping in parallel
+        $lbDevices.Items.Clear()
+        $script:deviceDNMap = @{}
+        $script:lblOnlineDot.Visible = $false
         try {
             $searchString = $targetUser.Name
-            
-            $psFilter = "Description -like '*$searchString*' -and (Name -like 'BSUS*' -or Name -like 'BSLA*' -or Name -like 'BSCA*' -or Name -like 'BSMX*')"
+            $ldapFilter = "(&(description=*$searchString*)(|(name=BSUS*)(name=BSLA*)(name=BSCA*)(name=BSMX*)))"
 
-            $userDevices = Get-ADComputer -Filter $psFilter -Server $Domain -Properties Description -ErrorAction Stop;
+            $userDevices = @(Get-ADComputer -LDAPFilter $ldapFilter -Server $Domain -Properties Description, DistinguishedName -ErrorAction Stop)
             
-            if (@($userDevices).Count -gt 0) {
-                foreach ($dev in $userDevices) {
-                    [void]$lbDevices.Items.Add($dev.Name)
+            if ($userDevices.Count -gt 0) {
+                $onlineDevs = [System.Collections.Generic.List[string]]::new()
+                $pingTasks = @{}
+
+                $oldSyncCtx = [System.Threading.SynchronizationContext]::Current
+                [System.Threading.SynchronizationContext]::SetSynchronizationContext($null)
+                try {
+                    foreach ($dev in $userDevices) {
+                        $script:deviceDNMap[$dev.Name] = $dev.DistinguishedName
+                        $pinger = New-Object System.Net.NetworkInformation.Ping
+                        $pingTasks[$dev.Name] = @{
+                            Pinger = $pinger
+                            Task   = $pinger.SendPingAsync($dev.Name, 500)
+                        }
+                    }
+                } finally {
+                    [System.Threading.SynchronizationContext]::SetSynchronizationContext($oldSyncCtx)
                 }
-				
+
+                foreach ($dev in $userDevices) {
+                    $devName = $dev.Name
+                    $entry = $pingTasks[$devName]
+                    $devOnline = $false
+
+                    try {
+                        if ($entry.Task.Wait(1500) -and $entry.Task.Status -eq 'RanToCompletion') {
+                            if ($entry.Task.Result.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
+                                $devOnline = $true
+                                $onlineDevs.Add($devName)
+                            }
+                        }
+                    } catch { 
+                        # catch DNS resolution failures on stale AD records
+                    } finally {
+                        if ($entry.Task.IsCompleted) { $entry.Pinger.Dispose() }
+                    }
+
+                    # append (online) or (offline) next to the device name
+                    $statusText = if ($devOnline) { "(online)" } else { "(offline)" }
+                    [void]$lbDevices.Items.Add("$devName $statusText")
+                }
+
+                $lbDevices.SelectedIndex = 0
+                $script:rowDeviceOU.Val.Text = Get-ShortContainerPath $userDevices[0].DistinguishedName
+                $script:rowDeviceOU.Val.Tag = $userDevices[0].DistinguishedName
+
+                # top dot next to user's name turns green if a assigned device is online
+                $script:lblOnlineDot.Visible = $true
+                if ($onlineDevs.Count -gt 0) {
+                    $script:lblOnlineDot.ForeColor = [System.Drawing.Color]::LimeGreen
+                    $onlineList = $onlineDevs -join ', '
+                    $editToolTip.SetToolTip($script:lblOnlineDot, "Online ($onlineList)")
+                } else {
+                    $script:lblOnlineDot.ForeColor = [System.Drawing.Color]::Crimson
+                    $editToolTip.SetToolTip($script:lblOnlineDot, "Offline (No response from assigned devices)")
+                }
             } else {
                 [void]$lbDevices.Items.Add("No assigned devices found.")
+                $script:rowDeviceOU.Val.Text = "N/A"
+                $script:rowDeviceOU.Val.Tag = $null
             }
         } catch {
             [void]$lbDevices.Items.Add("Error loading devices.")
+            $script:rowDeviceOU.Val.Text = "N/A"
+            $script:rowDeviceOU.Val.Tag = $null
         }
 
         # clears status
@@ -1211,6 +1503,17 @@ $btnCopyGroups.Add_Click({
         [System.Windows.Forms.Clipboard]::SetText($grpText)
         $lblActionStatus.ForeColor = [System.Drawing.Color]::Blue
         $lblActionStatus.Text = "Group memberships copied to clipboard."
+    }
+})
+
+# strips (online)/(offline) suffix when selecting device in the ListBox
+$lbDevices.Add_SelectedIndexChanged({
+    if (-not $lbDevices.SelectedItem) { return }
+    $selectedDevName = $lbDevices.SelectedItem -replace '\s+\((online|offline)\)$', ''
+    if ($script:deviceDNMap.ContainsKey($selectedDevName)) {
+        $dn = $script:deviceDNMap[$selectedDevName]
+        $script:rowDeviceOU.Val.Text = Get-ShortContainerPath $dn
+        $script:rowDeviceOU.Val.Tag = $dn
     }
 })
 
@@ -1234,6 +1537,45 @@ $script:lblProfileName.Add_DoubleClick({
             $script:lblProfileName.Text = $newVal
         } catch {
             [System.Windows.Forms.MessageBox]::Show("Failed to rename object: $($_.Exception.Message)", "Error", 0, [System.Windows.Forms.MessageBoxIcon]::Error)
+        }
+    }
+})
+
+$script:rowUserOU.Val.Add_DoubleClick({
+    if (-not $script:rowUserOU.Val.Tag) { return }
+    $newOU = Show-OUPicker
+    if ($newOU) {
+        try {
+            Move-ADObject -Identity $script:rowUserOU.Val.Tag -TargetPath $newOU -Server $Domain -ErrorAction Stop
+            $script:targetUserDN = (Get-ADUser -Identity $script:targetUserSam -Server $Domain).DistinguishedName
+            $script:rowUserOU.Val.Tag = $script:targetUserDN
+            $script:rowUserOU.Val.Text = Get-ShortContainerPath $script:targetUserDN
+            $lblActionStatus.ForeColor = [System.Drawing.Color]::DarkGreen
+            $lblActionStatus.Text = "User moved successfully."
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show("Failed to move user: $($_.Exception.Message)", "Error", 0, [System.Windows.Forms.MessageBoxIcon]::Error)
+        }
+    }
+})
+
+$script:rowDeviceOU.Val.Add_DoubleClick({
+    if (-not $script:rowDeviceOU.Val.Tag) { return }
+    $newOU = Show-OUPicker
+    if ($newOU) {
+        try {
+            $oldDN = $script:rowDeviceOU.Val.Tag
+            Move-ADObject -Identity $oldDN -TargetPath $newOU -Server $Domain -ErrorAction Stop
+            $devName = ($oldDN -split ',')[0] -replace '^CN=',''
+            $updatedDev = Get-ADComputer -Identity $devName -Server $Domain -Properties DistinguishedName -ErrorAction Stop
+            
+            $script:rowDeviceOU.Val.Tag = $updatedDev.DistinguishedName
+            $script:rowDeviceOU.Val.Text = Get-ShortContainerPath $updatedDev.DistinguishedName
+            $script:deviceDNMap[$devName] = $updatedDev.DistinguishedName
+            
+            $lblActionStatus.ForeColor = [System.Drawing.Color]::DarkGreen
+            $lblActionStatus.Text = "Device '$devName' moved successfully."
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show("Failed to move device: $($_.Exception.Message)", "Error", 0, [System.Windows.Forms.MessageBoxIcon]::Error)
         }
     }
 })
@@ -1291,7 +1633,7 @@ $script:rowMgr.Val.Add_DoubleClick({
             if ([string]::IsNullOrWhiteSpace($newVal)) {
                 Set-ADUser -Identity $script:targetUserDN -Clear Manager -ErrorAction Stop; $script:rowMgr.Val.Text = "N/A"
             } else {
-                $mgrObj = Get-ADUser -Filter "Name -eq '$newVal'" -ErrorAction Stop
+                $mgrObj = @(Get-ADUser -Filter "Name -eq `"$newVal`" -or DisplayName -eq `"$newVal`" -or sAMAccountName -eq `"$newVal`"" -ErrorAction Stop)
                 if ($mgrObj) {
                     if ($mgrObj.Count -gt 1) { $mgrObj =$mgrObj[0] }
                     Set-ADUser -Identity $script:targetUserDN -Manager $mgrObj.DistinguishedName -ErrorAction Stop
@@ -1307,11 +1649,11 @@ $script:rowMgr.Val.Add_DoubleClick({
 })
 
 $btnResetPass.Add_Click({$lblActionStatus.Text = "";
-    $resetData = Show-PasswordResetPrompt -TargetUser$script:targetUserSam;
+    $resetData = Show-PasswordResetPrompt -TargetUser $script:targetUserSam;
     
     if ($resetData -ne $null -and -not [string]::IsNullOrWhiteSpace($resetData.Password)) {
         try {
-            $secPass = ConvertTo-SecureString$resetData.Password -AsPlainText -Force;
+            $secPass = ConvertTo-SecureString $resetData.Password -AsPlainText -Force;
             Set-ADAccountPassword -Identity $script:targetUserDN -NewPassword $secPass -Reset -ErrorAction Stop;
             Set-ADUser -Identity $script:targetUserDN -ChangePasswordAtLogon $resetData.RequireChange -ErrorAction Stop;
             
@@ -1330,18 +1672,18 @@ $btnResetPass.Add_Click({$lblActionStatus.Text = "";
 $btnScanDevice.Add_Click({
     $lblActionStatus.Text = "";
     
-    # checks if device list is empty or contains error
+    # checks if device list is empty / errored
     if ($lbDevices.Items.Count -eq 0 -or $lbDevices.Items[0] -match "No assigned devices|Error") {
         [System.Windows.Forms.MessageBox]::Show("There are no valid devices assigned to this user to scan.", "Warning", 0, [System.Windows.Forms.MessageBoxIcon]::Warning)
         return
     }
 
-    # insert the item the user clicked on
+    # insert the device the user clicked on
     $devName = $lbDevices.SelectedItem
 
     # if user hasn't clicked device
     if ($null -eq $devName) {
-        # if only 1 device, auto-select
+        # if only 1 device in list, auto-select
         if ($lbDevices.Items.Count -eq 1) {
             $devName = $lbDevices.Items[0]
         } else {
@@ -1351,6 +1693,8 @@ $btnScanDevice.Add_Click({
         }
     }
 
+	$devName = $devName -replace '\s+\((online|offline)\)$', ''
+	
     # exec scan on chosen device
     if (Test-Path $script:deviceInfoScriptPath) {
         try {
