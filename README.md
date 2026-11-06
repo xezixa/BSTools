@@ -67,13 +67,13 @@
 <br>
 
 
-<h2> - BlueStar Quick On/Off - </h2>
+<h2> - BlueStar Enterprise IT Management Tool - </h2>
 
 > **File:** `QuickLocalOnboard.ps1`
 
-*A lightweight, Windows Forms-based PowerShell utility built to streamline and standardize Active Directory user lifecycle management.* 
+*A lightweight, Windows Forms-based PowerShell utility built to centralize Active Directory user lifecycle, role-based access, and live endpoint management.* 
 
-*Eliminates manual AD configuration steps, ensuring all new hires and terminations are processed consistently, securely, and rapidly.*
+*Eliminates repetitive ADUC navigation, ensuring new hires, live profile and OU updates, device diagnostics, and terminations are processed consistently, securely, and rapidly.*
 
 <img width="329" height="483" alt="1" src="https://github.com/user-attachments/assets/a56c236b-9ee2-4417-b58b-3e8508be6a7e" /> <img width="335" height="489" alt="2" src="https://github.com/user-attachments/assets/c002628c-cec2-4251-96fc-3ac50c8e3fb1" />
 
@@ -88,10 +88,10 @@
 
 <h3>Automated Employee Onboarding</h3>
 
-- <b>Dynamic Form Logic</b> | <i>(Selecting a primary region (US, CA, LA, MX) automatically populates the correct information for that specific location)</i>
-- <b>Smart Account Gen</b> | <i>(Automatically creates `sAMAccountName` & `UserPrincipalName` using standard corporate naming conventions)</i>
+- <b>Dynamic Form Logic</b> | <i>(Selecting a primary region (US, CA, LA, MX) automatically populates the correct office addresses, phone numbers, and departments for that specific location)</i>
+- <b>Smart Account & Manager Resolution</b> | <i>(Automatically creates `sAMAccountName` & `UserPrincipalName` with collision fallback, plus cached AD autocomplete)</i>
 - <b>Precision OU Routing</b> | <i>(Ensures new user object is placed in the correct Organizational Unit based on region and dept.)</i>
-- <b>Standardized Group Assignment</b> | <i>(Adds every new hire to standard baseline security and distribution groups)</i>
+- <b>Role-Based & Baseline Group Assignment</b> | <i>(Automatically assigns baseline security groups plus division-, department-, and office-specific groups across US, CA, LA, and MX)</i>
 - <b>Seamless Mailbox Provisioning</b> | <i>(Auto-triggers mailbox provisioning tool directly from the UI)</i>
 
 <br>
@@ -99,7 +99,8 @@
 <h3>1-Click Offboarding</h3>
 
 - <b>Intelligent AD Search</b> | <i>(Locate departing users instantly via username, full name, or display name)</i>
-- <b>Automatic Offboard Sequence</b> | <i>(Automates the standard offboarding tasks in one click.)</i>
+- <b>Automatic Offboard Sequence</b> | <i>(Disables account, resets password, locks password changes, clears Dept/IP Phone fields, and strips local security groups in one click)</i>
+- <b>Rich Text Audit & M365 Handling</b> | <i>(Outputs a color-coded summary of completed actions and flags cloud-synced groups requiring removal in the M365 Admin Center)</i>
 
 <br>
 
